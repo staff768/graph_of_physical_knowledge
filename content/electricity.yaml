@@ -1,0 +1,594 @@
+# Раздел «Электричество».
+#
+# Типы узлов: law, quantity, formula, phenomenon.
+# Рёбра направлены от основания к следствию:
+#   formulates  закон → формула
+#   used_in     величина → формула | закон
+#   derives     формула → формула | закон → закон
+#   explains    закон | формула → явление
+#   causes      явление → явление
+#   defines     закон | формула → величина
+#
+# Формулы (поле formula, unit) — LaTeX. Поля body и example — Markdown с $...$ вставками.
+
+section: Электричество
+
+nodes:
+  # ---------- Величины ----------
+  - slug: electric-charge
+    type: quantity
+    title: Электрический заряд
+    formula: 'q'
+    unit: '\text{Кл}'
+    summary: Мера способности тела участвовать в электромагнитном взаимодействии.
+    body: |
+      Заряд бывает положительным и отрицательным и дискретен: любой заряд кратен
+      элементарному $e \approx 1{,}6 \cdot 10^{-19}$ Кл.
+
+  - slug: time
+    type: quantity
+    title: Время
+    formula: 't'
+    unit: '\text{с}'
+    summary: Длительность процесса.
+
+  - slug: electric-current
+    type: quantity
+    title: Сила тока
+    formula: 'I'
+    unit: '\text{А}'
+    summary: Заряд, проходящий через поперечное сечение проводника за единицу времени.
+
+  - slug: voltage
+    type: quantity
+    title: Напряжение
+    formula: 'U'
+    unit: '\text{В}'
+    summary: Работа электрического поля по переносу единичного заряда между двумя точками.
+
+  - slug: resistance
+    type: quantity
+    title: Сопротивление
+    formula: 'R'
+    unit: '\text{Ом}'
+    summary: Свойство проводника препятствовать прохождению тока.
+
+  - slug: resistivity
+    type: quantity
+    title: Удельное сопротивление
+    formula: '\rho'
+    unit: '\text{Ом}\cdot\text{м}'
+    summary: Сопротивление материала, не зависящее от формы проводника.
+    body: |
+      Медь: $1{,}7 \cdot 10^{-8}$ Ом·м, нихром: $1{,}1 \cdot 10^{-6}$ Ом·м — в 65 раз больше.
+      Поэтому провода делают из меди, а нагревательные спирали — из нихрома.
+
+  - slug: conductor-length
+    type: quantity
+    title: Длина проводника
+    formula: 'l'
+    unit: '\text{м}'
+    summary: Протяжённость проводника вдоль направления тока.
+
+  - slug: cross-section-area
+    type: quantity
+    title: Площадь сечения
+    formula: 'S'
+    unit: '\text{м}^2'
+    summary: Площадь поперечного сечения проводника или контура.
+
+  - slug: power
+    type: quantity
+    title: Мощность
+    formula: 'P'
+    unit: '\text{Вт}'
+    summary: Энергия, выделяемая или потребляемая за единицу времени.
+
+  - slug: heat
+    type: quantity
+    title: Количество теплоты
+    formula: 'Q'
+    unit: '\text{Дж}'
+    summary: Энергия, переданная телу в форме тепла.
+
+  - slug: temperature
+    type: quantity
+    title: Температура
+    formula: 'T'
+    unit: '\text{К}'
+    summary: Мера средней кинетической энергии теплового движения частиц.
+
+  - slug: emf
+    type: quantity
+    title: ЭДС
+    formula: '\mathcal{E}'
+    unit: '\text{В}'
+    summary: Работа сторонних сил источника по переносу единичного заряда по замкнутой цепи.
+
+  - slug: internal-resistance
+    type: quantity
+    title: Внутреннее сопротивление
+    formula: 'r'
+    unit: '\text{Ом}'
+    summary: Сопротивление самого источника тока (электролита, обмоток).
+    body: |
+      У автомобильного аккумулятора $r \approx 0{,}01$–$0{,}05$ Ом, у батарейки АА — около $0{,}2$ Ом.
+      Именно $r$ ограничивает ток короткого замыкания.
+
+  - slug: electric-field
+    type: quantity
+    title: Напряжённость электрического поля
+    formula: 'E'
+    unit: '\text{В/м}'
+    summary: Сила, действующая со стороны поля на единичный положительный заряд.
+
+  - slug: magnetic-induction
+    type: quantity
+    title: Магнитная индукция
+    formula: 'B'
+    unit: '\text{Тл}'
+    summary: Силовая характеристика магнитного поля.
+
+  - slug: magnetic-flux
+    type: quantity
+    title: Магнитный поток
+    formula: '\Phi'
+    unit: '\text{Вб}'
+    summary: Количество линий магнитной индукции, пронизывающих контур.
+
+  # ---------- Законы ----------
+  - slug: charge-conservation
+    type: law
+    title: Закон сохранения заряда
+    formula: '\sum q_i = \text{const}'
+    summary: В замкнутой системе алгебраическая сумма зарядов не меняется.
+    body: |
+      Заряды не возникают и не исчезают — они лишь перераспределяются между телами.
+      Отсюда следует, что ток, втекающий в узел цепи, равен вытекающему.
+
+  - slug: energy-conservation
+    type: law
+    title: Закон сохранения энергии
+    formula: 'E_{\text{полн}} = \text{const}'
+    summary: Энергия не возникает и не исчезает, а только переходит из одной формы в другую.
+    body: |
+      В электрических цепях работа сторонних сил источника превращается в тепло,
+      свет, механическую работу. Это фундамент законов Ома для полной цепи и Джоуля–Ленца.
+
+  - slug: ohm-law-section
+    type: law
+    title: Закон Ома для участка цепи
+    formula: 'I = \dfrac{U}{R}'
+    summary: Сила тока на участке прямо пропорциональна напряжению и обратно пропорциональна сопротивлению.
+    body: |
+      Экспериментальный закон (Г. Ом, 1826). Выполняется для металлов и электролитов
+      при неизменной температуре.
+
+  - slug: ohm-law-full
+    type: law
+    title: Закон Ома для полной цепи
+    formula: 'I = \dfrac{\mathcal{E}}{R + r}'
+    summary: Ток в замкнутой цепи определяется ЭДС источника и суммой внешнего и внутреннего сопротивлений.
+    body: |
+      Следует из закона сохранения энергии: работа сторонних сил $\mathcal{E} I t$
+      равна теплу, выделившемуся снаружи и внутри источника, $I^2 R t + I^2 r t$.
+
+  - slug: joule-lenz-law
+    type: law
+    title: Закон Джоуля–Ленца
+    formula: 'Q = I^2 R t'
+    summary: Проводник с током нагревается, и выделяемое тепло пропорционально квадрату силы тока.
+    body: |
+      Движущиеся электроны сталкиваются с ионами кристаллической решётки и
+      передают им энергию — решётка колеблется сильнее, проводник нагревается.
+      Ключевое: тепло растёт как **квадрат** тока. Удвоение тока — вчетверо больше тепла.
+
+  - slug: kirchhoff-current-law
+    type: law
+    title: Первое правило Кирхгофа
+    formula: '\sum I_{\text{вх}} = \sum I_{\text{вых}}'
+    summary: Сумма токов, входящих в узел, равна сумме выходящих.
+
+  - slug: kirchhoff-voltage-law
+    type: law
+    title: Второе правило Кирхгофа
+    formula: '\sum \mathcal{E}_k = \sum I_k R_k'
+    summary: В замкнутом контуре сумма ЭДС равна сумме падений напряжения.
+
+  - slug: coulomb-law
+    type: law
+    title: Закон Кулона
+    formula: 'F = k\dfrac{|q_1 q_2|}{r^2}'
+    summary: Точечные заряды взаимодействуют с силой, обратно пропорциональной квадрату расстояния.
+
+  - slug: faraday-law
+    type: law
+    title: Закон электромагнитной индукции
+    formula: '\mathcal{E}_i = -\dfrac{\Delta \Phi}{\Delta t}'
+    summary: Изменение магнитного потока через контур порождает в нём ЭДС индукции.
+    body: |
+      Открыт М. Фарадеем в 1831 году. Важна именно **скорость** изменения потока:
+      чем быстрее меняется $\Phi$, тем больше ЭДС.
+
+  - slug: lenz-rule
+    type: law
+    title: Правило Ленца
+    summary: Индукционный ток направлен так, чтобы препятствовать причине, его вызвавшей.
+    body: |
+      Это проявление закона сохранения энергии: иначе индукционный ток усиливал бы
+      сам себя без затрат энергии. Математически правило даёт знак «минус» в законе Фарадея.
+
+  - slug: ampere-law
+    type: law
+    title: Закон Ампера
+    summary: На проводник с током в магнитном поле действует сила.
+
+  # ---------- Формулы ----------
+  - slug: f-current-definition
+    type: formula
+    title: Определение силы тока
+    formula: 'I = \dfrac{q}{t}'
+    summary: Сила тока — заряд, прошедший через сечение за единицу времени.
+
+  - slug: f-ohm-section
+    type: formula
+    title: Закон Ома (участок)
+    formula: 'I = \dfrac{U}{R}, \quad U = IR'
+    summary: Связь тока, напряжения и сопротивления на участке цепи.
+
+  - slug: f-ohm-full
+    type: formula
+    title: Закон Ома (полная цепь)
+    formula: 'I = \dfrac{\mathcal{E}}{R + r}'
+    summary: Ток в цепи с источником, имеющим внутреннее сопротивление.
+
+  - slug: f-short-circuit-current
+    type: formula
+    title: Ток короткого замыкания
+    formula: 'I_{\text{кз}} = \lim_{R \to 0} \dfrac{\mathcal{E}}{R + r} = \dfrac{\mathcal{E}}{r}'
+    summary: Если внешнее сопротивление близко к нулю, ток ограничен только внутренним сопротивлением источника.
+
+  - slug: f-resistance
+    type: formula
+    title: Сопротивление проводника
+    formula: 'R = \rho\dfrac{l}{S}'
+    summary: Сопротивление растёт с длиной и падает с площадью сечения.
+
+  - slug: f-resistance-temperature
+    type: formula
+    title: Зависимость сопротивления от температуры
+    formula: 'R = R_0 (1 + \alpha \Delta T)'
+    summary: Сопротивление металлов растёт при нагревании.
+    body: |
+      Для вольфрама $\alpha \approx 4{,}5 \cdot 10^{-3}$ К⁻¹: при нагреве на 2500 К
+      сопротивление нити вырастает более чем в 10 раз.
+
+  - slug: f-power
+    type: formula
+    title: Мощность тока
+    formula: 'P = UI'
+    summary: Мощность, выделяемая на участке цепи.
+
+  - slug: f-power-joule
+    type: formula
+    title: Тепловая мощность
+    formula: 'P = I^2 R = \dfrac{U^2}{R}'
+    summary: Мощность тепловыделения в проводнике, выраженная через ток или напряжение.
+
+  - slug: f-joule-lenz
+    type: formula
+    title: Теплота Джоуля–Ленца
+    formula: 'Q = I^2 R t'
+    summary: Количество теплоты, выделившееся в проводнике за время t.
+
+  - slug: f-heat-balance
+    type: formula
+    title: Нагревание тела
+    formula: 'Q = c m \Delta T'
+    summary: Теплота, необходимая для нагрева тела массы m на ΔT.
+
+  - slug: f-kirchhoff-current
+    type: formula
+    title: Баланс токов в узле
+    formula: '\sum_k I_k = 0'
+    summary: Алгебраическая сумма токов в узле равна нулю.
+
+  - slug: f-kirchhoff-voltage
+    type: formula
+    title: Баланс напряжений в контуре
+    formula: '\sum_k \mathcal{E}_k = \sum_k I_k R_k'
+    summary: Сумма ЭДС в контуре равна сумме падений напряжения.
+
+  - slug: f-series
+    type: formula
+    title: Последовательное соединение
+    formula: 'R = R_1 + R_2 + \dots + R_n'
+    summary: При последовательном соединении сопротивления складываются.
+
+  - slug: f-parallel
+    type: formula
+    title: Параллельное соединение
+    formula: '\dfrac{1}{R} = \dfrac{1}{R_1} + \dfrac{1}{R_2} + \dots, \quad I = \sum I_k'
+    summary: При параллельном соединении общее сопротивление уменьшается, а токи ветвей складываются.
+
+  - slug: f-coulomb
+    type: formula
+    title: Сила Кулона
+    formula: 'F = k\dfrac{|q_1 q_2|}{r^2}, \quad k = 9 \cdot 10^9\ \dfrac{\text{Н}\cdot\text{м}^2}{\text{Кл}^2}'
+    summary: Сила взаимодействия двух точечных зарядов.
+
+  - slug: f-field-voltage
+    type: formula
+    title: Поле и напряжение
+    formula: 'E = \dfrac{U}{d}'
+    summary: Напряжённость однородного поля между точками с напряжением U на расстоянии d.
+
+  - slug: f-magnetic-flux
+    type: formula
+    title: Магнитный поток
+    formula: '\Phi = B S \cos\alpha'
+    summary: Поток магнитной индукции через плоский контур.
+
+  - slug: f-faraday
+    type: formula
+    title: ЭДС индукции
+    formula: '\mathcal{E}_i = -N\dfrac{\Delta \Phi}{\Delta t}'
+    summary: ЭДС в катушке из N витков пропорциональна скорости изменения потока.
+
+  - slug: f-transformer
+    type: formula
+    title: Коэффициент трансформации
+    formula: '\dfrac{U_1}{U_2} = \dfrac{N_1}{N_2}'
+    summary: Напряжения на обмотках относятся как числа витков.
+
+  - slug: f-ampere
+    type: formula
+    title: Сила Ампера
+    formula: 'F = I B l \sin\alpha'
+    summary: Сила, действующая на проводник с током длины l в магнитном поле.
+
+  # ---------- Явления ----------
+  - slug: static-electrification
+    type: phenomenon
+    title: Электризация тел
+    summary: При трении или контакте тела приобретают заряды противоположных знаков.
+    body: |
+      Электроны переходят с одного тела на другое. Суммарный заряд сохраняется:
+      сколько ушло с одного тела, столько пришло на другое.
+
+  - slug: electrical-breakdown
+    type: phenomenon
+    title: Электрический пробой
+    summary: Диэлектрик скачком становится проводником, когда поле превышает критическое.
+    body: |
+      Для сухого воздуха критическая напряжённость около $3 \cdot 10^6$ В/м.
+      Свободные электроны разгоняются полем, ионизируют молекулы, и возникает лавина.
+
+  - slug: lightning
+    type: phenomenon
+    title: Молния
+    summary: Гигантский искровой разряд между облаком и землёй или между облаками.
+    example: |
+      Напряжение между облаком и землёй — порядка $10^8$ В, ток в канале — до $3 \cdot 10^4$ А,
+      длительность — около $10^{-4}$ с. Выделенная энергия $W \approx UIt \approx 3 \cdot 10^8$ Дж.
+
+  - slug: conductor-heating
+    type: phenomenon
+    title: Нагрев проводника током
+    summary: Любой проводник с конечным сопротивлением нагревается при прохождении тока.
+    example: |
+      Чайник $P = 2$ кВт нагревает $m = 1{,}5$ кг воды от 20 °C до 100 °C:
+      $Q = cm\Delta T = 4200 \cdot 1{,}5 \cdot 80 \approx 5 \cdot 10^5$ Дж, $t = Q/P \approx 250$ с ≈ 4 мин.
+
+  - slug: incandescent-lamp
+    type: phenomenon
+    title: Свечение лампы накаливания
+    summary: Вольфрамовая нить нагревается током до ~2800 К и излучает видимый свет.
+    body: |
+      Холодная нить имеет сопротивление в 10–12 раз меньше рабочего, поэтому в момент
+      включения ток кратковременно очень велик — лампы чаще всего перегорают именно при включении.
+    example: |
+      Лампа 100 Вт на 220 В: $R_{\text{раб}} = U^2/P \approx 484$ Ом.
+      Холодная нить: $R_0 \approx 40$ Ом, пусковой ток $I = 220/40 \approx 5{,}5$ А вместо рабочих $0{,}45$ А.
+
+  - slug: short-circuit
+    type: phenomenon
+    title: Короткое замыкание
+    summary: Соединение точек цепи с разными потенциалами через очень малое сопротивление в обход нагрузки.
+    body: |
+      Когда изоляция повреждена и провода соприкасаются, внешнее сопротивление $R$ падает почти до нуля.
+      Ток перестаёт ограничиваться нагрузкой — его сдерживает лишь внутреннее сопротивление
+      источника и проводов, поэтому он возрастает в десятки и сотни раз.
+    example: |
+      Аккумулятор: $\mathcal{E} = 12$ В, $r = 0{,}05$ Ом.
+
+      - Нормальная работа, $R = 6$ Ом: $I = \dfrac{12}{6{,}05} \approx 2$ А.
+      - Короткое замыкание, $R \to 0$: $I_{\text{кз}} = \dfrac{12}{0{,}05} = 240$ А — в 120 раз больше.
+
+      Тепловая мощность в проводах $P = I^2 R_{\text{пр}}$ растёт пропорционально $I^2$ —
+      примерно в $120^2 \approx 15\,000$ раз.
+
+  - slug: circuit-overload
+    type: phenomenon
+    title: Перегрузка сети
+    summary: Слишком много потребителей включено параллельно, и общий ток превышает допустимый для проводки.
+    example: |
+      Чайник (2 кВт), обогреватель (2 кВт) и утюг (1,5 кВт) на одной розетке 220 В:
+      $I = \dfrac{5500}{220} = 25$ А, а провод сечением 1,5 мм² рассчитан примерно на 16 А.
+
+  - slug: wiring-overheating
+    type: phenomenon
+    title: Аварийный перегрев проводки
+    summary: Ток, превышающий допустимый, разогревает провода выше безопасной температуры.
+
+  - slug: insulation-fire
+    type: phenomenon
+    title: Возгорание изоляции
+    summary: Перегретая пластиковая изоляция плавится и воспламеняется — частая причина пожаров.
+
+  - slug: fuse-blowing
+    type: phenomenon
+    title: Срабатывание предохранителя
+    summary: Тонкая проволока предохранителя плавится при превышении тока и размыкает цепь.
+    body: |
+      Предохранитель — намеренно «слабое звено»: его проволока тоньше и с бо́льшим сопротивлением,
+      поэтому по закону Джоуля–Ленца она нагревается и плавится раньше, чем успеет перегреться проводка.
+
+  - slug: electric-arc
+    type: phenomenon
+    title: Электрическая дуга
+    summary: Устойчивый разряд в газе с температурой плазмы в тысячи градусов.
+
+  - slug: voltage-drop
+    type: phenomenon
+    title: Падение напряжения в линии
+    summary: Часть напряжения теряется на сопротивлении длинных или тонких проводов.
+    example: |
+      Удлинитель 50 м из медного провода 0,75 мм² (туда и обратно 100 м):
+      $R = \rho l / S = 1{,}7 \cdot 10^{-8} \cdot 100 / 0{,}75 \cdot 10^{-6} \approx 2{,}3$ Ом.
+      При токе 10 А теряется $U = IR \approx 23$ В.
+
+  - slug: generator
+    type: phenomenon
+    title: Работа электрогенератора
+    summary: Вращение катушки в магнитном поле меняет магнитный поток и порождает ЭДС.
+
+  - slug: transformer-operation
+    type: phenomenon
+    title: Работа трансформатора
+    summary: Переменный ток в одной обмотке наводит ЭДС в другой и меняет величину напряжения.
+
+  - slug: induction-heating
+    type: phenomenon
+    title: Индукционный нагрев
+    summary: Переменное магнитное поле наводит в металле вихревые токи, которые его нагревают.
+    body: |
+      Так работают индукционные плиты: катушка под стеклом создаёт переменное поле,
+      в дне посуды возникают вихревые токи, и по закону Джоуля–Ленца дно нагревается.
+      Само стекло — диэлектрик и греется лишь от посуды.
+
+  - slug: electric-motor
+    type: phenomenon
+    title: Работа электродвигателя
+    summary: Сила Ампера, действующая на рамку с током в магнитном поле, заставляет её вращаться.
+
+edges:
+  # --- величины, вводимые формулами ---
+  - { from: electric-charge, to: f-current-definition, type: used_in }
+  - { from: time, to: f-current-definition, type: used_in }
+  - { from: f-current-definition, to: electric-current, type: defines }
+  - { from: resistivity, to: f-resistance, type: used_in }
+  - { from: conductor-length, to: f-resistance, type: used_in }
+  - { from: cross-section-area, to: f-resistance, type: used_in }
+  - { from: f-resistance, to: resistance, type: defines }
+  - { from: magnetic-induction, to: f-magnetic-flux, type: used_in }
+  - { from: cross-section-area, to: f-magnetic-flux, type: used_in }
+  - { from: f-magnetic-flux, to: magnetic-flux, type: defines }
+
+  # --- связи законов ---
+  - { from: charge-conservation, to: kirchhoff-current-law, type: derives, description: 'Заряд не накапливается в узле, значит сколько втекло — столько и вытекло.' }
+  - { from: energy-conservation, to: kirchhoff-voltage-law, type: derives, description: 'Работа по переносу заряда по замкнутому контуру равна нулю.' }
+  - { from: energy-conservation, to: ohm-law-full, type: derives, description: 'Работа сторонних сил равна теплу во внешней цепи и внутри источника.' }
+  - { from: ohm-law-section, to: ohm-law-full, type: derives, description: 'Обобщение на цепь с источником, имеющим внутреннее сопротивление.' }
+  - { from: energy-conservation, to: joule-lenz-law, type: derives, description: 'Работа электрического поля над зарядами превращается во внутреннюю энергию проводника.' }
+  - { from: energy-conservation, to: lenz-rule, type: derives, description: 'Иначе индукционный ток усиливал бы сам себя без затрат энергии.' }
+
+  # --- законы → формулы ---
+  - { from: ohm-law-section, to: f-ohm-section, type: formulates }
+  - { from: ohm-law-full, to: f-ohm-full, type: formulates }
+  - { from: joule-lenz-law, to: f-joule-lenz, type: formulates }
+  - { from: energy-conservation, to: f-heat-balance, type: formulates }
+  - { from: kirchhoff-current-law, to: f-kirchhoff-current, type: formulates }
+  - { from: kirchhoff-voltage-law, to: f-kirchhoff-voltage, type: formulates }
+  - { from: coulomb-law, to: f-coulomb, type: formulates }
+  - { from: faraday-law, to: f-faraday, type: formulates }
+  - { from: lenz-rule, to: f-faraday, type: formulates, description: 'Правило Ленца даёт знак «минус».' }
+  - { from: ampere-law, to: f-ampere, type: formulates }
+
+  # --- величины → формулы ---
+  - { from: electric-current, to: f-ohm-section, type: used_in }
+  - { from: voltage, to: f-ohm-section, type: used_in }
+  - { from: resistance, to: f-ohm-section, type: used_in }
+  - { from: electric-current, to: f-ohm-full, type: used_in }
+  - { from: emf, to: f-ohm-full, type: used_in }
+  - { from: resistance, to: f-ohm-full, type: used_in }
+  - { from: internal-resistance, to: f-ohm-full, type: used_in }
+  - { from: emf, to: f-short-circuit-current, type: used_in }
+  - { from: internal-resistance, to: f-short-circuit-current, type: used_in }
+  - { from: resistance, to: f-resistance-temperature, type: used_in }
+  - { from: temperature, to: f-resistance-temperature, type: used_in }
+  - { from: voltage, to: f-power, type: used_in }
+  - { from: electric-current, to: f-power, type: used_in }
+  - { from: f-power, to: power, type: defines }
+  - { from: power, to: f-power-joule, type: used_in }
+  - { from: electric-current, to: f-power-joule, type: used_in }
+  - { from: resistance, to: f-power-joule, type: used_in }
+  - { from: heat, to: f-joule-lenz, type: used_in }
+  - { from: electric-current, to: f-joule-lenz, type: used_in }
+  - { from: resistance, to: f-joule-lenz, type: used_in }
+  - { from: time, to: f-joule-lenz, type: used_in }
+  - { from: heat, to: f-heat-balance, type: used_in }
+  - { from: temperature, to: f-heat-balance, type: used_in }
+  - { from: electric-current, to: f-kirchhoff-current, type: used_in }
+  - { from: emf, to: f-kirchhoff-voltage, type: used_in }
+  - { from: electric-current, to: f-kirchhoff-voltage, type: used_in }
+  - { from: resistance, to: f-kirchhoff-voltage, type: used_in }
+  - { from: electric-charge, to: f-coulomb, type: used_in }
+  - { from: electric-field, to: f-field-voltage, type: used_in }
+  - { from: voltage, to: f-field-voltage, type: used_in }
+  - { from: magnetic-flux, to: f-faraday, type: used_in }
+  - { from: time, to: f-faraday, type: used_in }
+  - { from: voltage, to: f-transformer, type: used_in }
+  - { from: electric-current, to: f-ampere, type: used_in }
+  - { from: magnetic-induction, to: f-ampere, type: used_in }
+  - { from: conductor-length, to: f-ampere, type: used_in }
+
+  # --- вывод формул ---
+  - { from: f-ohm-full, to: f-short-circuit-current, type: derives, description: 'Предельный случай R → 0.' }
+  - { from: f-power, to: f-power-joule, type: derives, description: 'Подстановка U = IR.' }
+  - { from: f-ohm-section, to: f-power-joule, type: derives }
+  - { from: f-kirchhoff-voltage, to: f-series, type: derives, description: 'Ток одинаков, напряжения на участках складываются.' }
+  - { from: f-ohm-section, to: f-series, type: derives }
+  - { from: f-kirchhoff-current, to: f-parallel, type: derives, description: 'Напряжение одинаково, токи ветвей складываются.' }
+  - { from: f-ohm-section, to: f-parallel, type: derives }
+  - { from: f-faraday, to: f-transformer, type: derives, description: 'Один и тот же поток пронизывает обе обмотки.' }
+
+  # --- объяснение явлений ---
+  - { from: charge-conservation, to: static-electrification, type: explains, description: 'Заряды лишь перераспределяются между телами.' }
+  - { from: f-coulomb, to: static-electrification, type: explains, description: 'Наэлектризованные тела притягиваются или отталкиваются.' }
+  - { from: f-field-voltage, to: electrical-breakdown, type: explains, description: 'Пробой наступает, когда E = U/d превышает критическое значение.' }
+  - { from: f-joule-lenz, to: conductor-heating, type: explains, description: 'Тепло Q = I²Rt выделяется в проводнике.' }
+  - { from: f-heat-balance, to: conductor-heating, type: explains, description: 'Выделившееся тепло повышает температуру: ΔT = Q / (cm).' }
+  - { from: f-resistance-temperature, to: incandescent-lamp, type: explains, description: 'Холодная нить имеет малое сопротивление — бросок тока при включении.' }
+  - { from: f-power-joule, to: incandescent-lamp, type: explains, description: 'Мощность P = U²/R определяет яркость и температуру нити.' }
+  - { from: f-ohm-full, to: short-circuit, type: explains, description: 'При R → 0 ток ограничен только внутренним сопротивлением r.' }
+  - { from: f-short-circuit-current, to: short-circuit, type: explains, description: 'I = ℰ/r — в десятки и сотни раз больше рабочего тока.' }
+  - { from: f-parallel, to: circuit-overload, type: explains, description: 'Каждый новый потребитель уменьшает общее сопротивление и добавляет свой ток.' }
+  - { from: f-kirchhoff-current, to: circuit-overload, type: explains, description: 'Все токи потребителей сходятся в общем проводе.' }
+  - { from: f-power-joule, to: wiring-overheating, type: explains, description: 'Тепловая мощность в проводах растёт как I².' }
+  - { from: f-joule-lenz, to: fuse-blowing, type: explains, description: 'Проволока предохранителя нагревается сильнее проводки и плавится первой.' }
+  - { from: f-resistance, to: voltage-drop, type: explains, description: 'Чем длиннее и тоньше провод, тем больше его сопротивление.' }
+  - { from: f-series, to: voltage-drop, type: explains, description: 'Провода и нагрузка соединены последовательно — напряжение делится между ними.' }
+  - { from: f-faraday, to: generator, type: explains, description: 'Вращение меняет поток Φ = BS cos α, возникает ЭДС.' }
+  - { from: f-magnetic-flux, to: generator, type: explains, description: 'Поток зависит от угла α, который меняется при вращении.' }
+  - { from: f-transformer, to: transformer-operation, type: explains }
+  - { from: f-faraday, to: induction-heating, type: explains, description: 'Переменное поле наводит ЭДС в металле.' }
+  - { from: lenz-rule, to: induction-heating, type: explains, description: 'Вихревые токи замкнуты и противодействуют изменению поля.' }
+  - { from: f-joule-lenz, to: induction-heating, type: explains, description: 'Вихревые токи нагревают металл.' }
+  - { from: f-ampere, to: electric-motor, type: explains }
+
+  # --- причинно-следственные связи явлений ---
+  - { from: static-electrification, to: lightning, type: causes, description: 'В грозовом облаке трение льдинок разделяет заряды.' }
+  - { from: electrical-breakdown, to: lightning, type: causes, description: 'Поле между облаком и землёй превышает пробойное для воздуха.' }
+  - { from: electrical-breakdown, to: electric-arc, type: causes }
+  - { from: short-circuit, to: electric-arc, type: causes, description: 'В месте замыкания огромный ток ионизирует воздух и испаряет металл.' }
+  - { from: conductor-heating, to: incandescent-lamp, type: causes, description: 'Нить разогревается до свечения.' }
+  - { from: conductor-heating, to: wiring-overheating, type: causes }
+  - { from: short-circuit, to: wiring-overheating, type: causes, description: 'Ток в сотни раз выше номинального.' }
+  - { from: circuit-overload, to: wiring-overheating, type: causes, description: 'Ток выше допустимого для сечения провода.' }
+  - { from: wiring-overheating, to: insulation-fire, type: causes, description: 'Изоляция плавится при 70–100 °C и воспламеняется.' }
+  - { from: electric-arc, to: insulation-fire, type: causes, description: 'Температура дуги — тысячи градусов.' }
+  - { from: short-circuit, to: fuse-blowing, type: causes, description: 'Предохранитель размыкает цепь за доли секунды.' }
+  - { from: circuit-overload, to: fuse-blowing, type: causes }
+  - { from: conductor-heating, to: fuse-blowing, type: causes }
+  - { from: conductor-heating, to: induction-heating, type: causes }

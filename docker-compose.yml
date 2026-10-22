@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: physics
+      POSTGRES_PASSWORD: physics
+      POSTGRES_DB: physics
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U physics"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  seed:
+    build: .
+    command: ["/app/seed", "-dir", "/app/content"]
+    environment:
+      DATABASE_URL: postgres://physics:physics@postgres:5432/physics?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["app"]
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgres://physics:physics@postgres:5432/physics?sslmode=disable
+      STATIC_DIR: /app/web
+    ports:
+      - "8080:8080"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    profiles: ["app"]
+
+volumes:
+  pgdata:

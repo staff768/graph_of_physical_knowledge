@@ -1,0 +1,5 @@
+.idea/workspace.xml
+web/node_modules
+web/dist
+/api
+/seed
