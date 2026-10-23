@@ -118,3 +118,23 @@ func TestParsePDF(t *testing.T) {
 		t.Errorf("page numbers = %d, %d", doc.Pages[0].Number, doc.Pages[1].Number)
 	}
 }
+
+func TestParseAll(t *testing.T) {
+	png := []byte("\x89PNG\r\n\x1a\n" + strings.Repeat("\x00", 32))
+	doc, err := ParseAll([]Input{{MIME: "image/png", Data: png}, {MIME: "image/jpeg", Data: []byte("\xff\xd8\xff")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Images) != 2 || doc.Images[1].MIME != "image/jpeg" || doc.PageCount() != 2 {
+		t.Errorf("doc = %+v", doc)
+	}
+	// Документ вперемешку с фото не принимается.
+	if _, err := ParseAll([]Input{{MIME: "image/png", Data: png}, {MIME: "text/plain", Data: []byte("x")}}); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("mixed: err = %v", err)
+	}
+	// Один файл разбирается как раньше.
+	doc, err = ParseAll([]Input{{MIME: "text/plain", Data: []byte("Закон Ома")}})
+	if err != nil || doc.Text() != "Закон Ома" {
+		t.Errorf("single: %+v, %v", doc, err)
+	}
+}

@@ -91,7 +91,7 @@ func TestWorkerBuildsGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := newMemStore(storage.Upload{GraphID: "g1", Filename: "Конспект урока.txt", MIME: "text/plain", Data: notes})
+	s := newMemStore(storage.Upload{GraphID: "g1", Files: []storage.File{{Filename: "Конспект урока.txt", MIME: "text/plain", Data: notes}}})
 	w := New(s, &builder.Builder{LLM: llm.Stub{}}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	w.Poll = 10 * time.Millisecond
 	runUntilIdle(t, w, s)
@@ -109,8 +109,8 @@ func TestWorkerBuildsGraph(t *testing.T) {
 
 func TestWorkerReportsUserFriendlyErrors(t *testing.T) {
 	s := newMemStore(
-		storage.Upload{GraphID: "empty", Filename: "empty.txt", MIME: "text/plain", Data: []byte("   ")},
-		storage.Upload{GraphID: "nophysics", Filename: "poem.txt", MIME: "text/plain", Data: []byte("Мороз и солнце; день чудесный!")},
+		storage.Upload{GraphID: "empty", Files: []storage.File{{Filename: "empty.txt", MIME: "text/plain", Data: []byte("   ")}}},
+		storage.Upload{GraphID: "nophysics", Files: []storage.File{{Filename: "poem.txt", MIME: "text/plain", Data: []byte("Мороз и солнце; день чудесный!")}}},
 	)
 	w := New(s, &builder.Builder{LLM: llm.Stub{}}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	w.Poll = 10 * time.Millisecond

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { EmptyState } from '../components/EmptyState'
 import { GraphCard } from '../components/GraphCard'
 import { api } from '../api'
-import { graphPath, invalidateGraphs, useFavorites, useGraphs } from '../graphs'
+import { graphPath, invalidateGraphs, plural, useFavorites, useGraphs } from '../graphs'
 import { Icon, Mask } from '../components/Icon'
 import { icons } from '../icons'
 import { linkClick, navigate } from '../router'
@@ -101,33 +101,65 @@ export function HomePage() {
   )
 }
 
+const MAX_FILES = 10
+const isImage = (f: File) => /\.(jpe?g|png)$/i.test(f.name)
+const extOk = (f: File) => ACCEPT.split(',').includes(`.${f.name.split('.').pop()?.toLowerCase() ?? ''}`)
+// Фото с телефона называются по порядку (IMG_0412, IMG_0413…) — сортируем по имени с учётом чисел.
+const byName = (a: File, b: File) => a.name.localeCompare(b.name, 'ru', { numeric: true })
+
 function UploadZone() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
-  const [uploading, setUploading] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Фото страниц, которые ждут отправки: их можно дополнить или убрать перед построением.
+  const [pages, setPages] = useState<File[]>([])
 
-  const accept = async (file: File | undefined) => {
-    if (!file || uploading) return
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
-    if (!ACCEPT.split(',').includes(`.${ext}`)) {
-      setError('Этот формат не поддерживается. Подойдут PDF, DOCX, TXT, JPG и PNG.')
-      return
-    }
-    if (file.size > MAX_SIZE) {
-      setError('Файл больше 25 МБ.')
-      return
-    }
+  const send = async (files: File[]) => {
     setError(null)
-    setUploading(file.name)
+    setUploading(true)
     try {
-      const { id } = await api.upload(file)
+      const { id } = await api.upload(files)
       invalidateGraphs()
       navigate(graphPath(id))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось загрузить файл.')
-      setUploading(null)
+      setUploading(false)
     }
+  }
+
+  const accept = (list: FileList | null) => {
+    const files = Array.from(list ?? [])
+    if (files.length === 0 || uploading) return
+    if (files.some((f) => !extOk(f))) {
+      setError('Этот формат не поддерживается. Подойдут PDF, DOCX, TXT, JPG и PNG.')
+      return
+    }
+    const docs = files.filter((f) => !isImage(f))
+    if (docs.length > 0) {
+      // Документ (PDF, DOCX, TXT) отправляется сразу и только по одному.
+      if (files.length > 1 || pages.length > 0) {
+        setError('Документ загружайте отдельно. Несколько файлов можно, только если это фото страниц.')
+        return
+      }
+      if (docs[0].size > MAX_SIZE) {
+        setError('Файл больше 25 МБ.')
+        return
+      }
+      void send(docs)
+      return
+    }
+    const next = [...pages, ...files.filter((f) => !pages.some((p) => p.name === f.name && p.size === f.size))].sort(byName)
+    if (next.length > MAX_FILES) {
+      setError(`Можно загрузить не больше ${MAX_FILES} фото за раз.`)
+      return
+    }
+    if (next.reduce((sum, f) => sum + f.size, 0) > MAX_SIZE) {
+      setError('Фото вместе больше 25 МБ.')
+      return
+    }
+    setError(null)
+    setPages(next)
   }
 
   return (
@@ -141,28 +173,65 @@ function UploadZone() {
       onDrop={(e) => {
         e.preventDefault()
         setDragging(false)
-        void accept(e.dataTransfer.files[0])
+        accept(e.dataTransfer.files)
       }}
-      aria-busy={!!uploading}
+      aria-busy={uploading}
     >
-      <div className="upload-symbol">
-        <Icon src={icons.fileUp} size={26} className="accent" />
-      </div>
-      <div className="upload-hint">
-        <div className="upload-title">{uploading ? 'Загружаем конспект…' : 'Здесь ваш следующий граф'}</div>
-        <div className="upload-sub">{uploading ?? 'Перетащите конспект сюда или выберите файл'}</div>
-      </div>
-      <button className="button primary" onClick={() => inputRef.current?.click()} disabled={!!uploading}>
-        <Icon src={icons.plusWhite} size={18} />
-        Выбрать конспект
-      </button>
+      {pages.length > 0 ? (
+        <PagesPreview
+          pages={pages}
+          disabled={uploading}
+          onRemove={(f) => {
+            forgetThumbs([f])
+            setPages(pages.filter((p) => p !== f))
+          }}
+        />
+      ) : (
+        <>
+          <div className="upload-symbol">
+            <Icon src={icons.fileUp} size={26} className="accent" />
+          </div>
+          <div className="upload-hint">
+            <div className="upload-title">{uploading ? 'Загружаем конспект…' : 'Здесь ваш следующий граф'}</div>
+            <div className="upload-sub">Перетащите конспект или фото страниц сюда либо выберите файлы</div>
+          </div>
+        </>
+      )}
+
+      {pages.length > 0 ? (
+        <div className="upload-actions">
+          <button className="button primary" onClick={() => void send(pages)} disabled={uploading}>
+            {uploading ? 'Загружаем…' : `Построить граф · ${pages.length} ${plural(pages.length, 'страница', 'страницы', 'страниц')}`}
+          </button>
+          <button className="button" onClick={() => inputRef.current?.click()} disabled={uploading || pages.length >= MAX_FILES}>
+            <Icon src={icons.plus} size={15} />
+            Добавить страницы
+          </button>
+          <button
+            className="button ghost"
+            onClick={() => {
+              forgetThumbs(pages)
+              setPages([])
+            }}
+            disabled={uploading}
+          >
+            Очистить
+          </button>
+        </div>
+      ) : (
+        <button className="button primary" onClick={() => inputRef.current?.click()} disabled={uploading}>
+          <Icon src={icons.plusWhite} size={18} />
+          Выбрать конспект
+        </button>
+      )}
       <input
         ref={inputRef}
         type="file"
         accept={ACCEPT}
+        multiple
         hidden
         onChange={(e) => {
-          void accept(e.target.files?.[0])
+          accept(e.target.files)
           e.target.value = ''
         }}
       />
@@ -171,12 +240,54 @@ function UploadZone() {
           {error}
         </p>
       ) : (
-        <div className="upload-formats">PDF, DOCX, TXT, JPG и PNG · до 25 МБ</div>
+        <div className="upload-formats">
+          {pages.length > 0
+            ? 'Порядок страниц — по именам файлов. Проверьте, что страницы идут по порядку.'
+            : 'PDF, DOCX или TXT — один файл; фото страниц JPG и PNG — до 10 штук · до 25 МБ'}
+        </div>
       )}
       <div className="upload-privacy">
         <Icon src={icons.lockSmall} size={12} />
-        Файл удаляется сразу после построения графа
+        Файлы удаляются сразу после построения графа
       </div>
     </div>
+  )
+}
+
+// Ссылки на миниатюры создаются один раз на файл и освобождаются, когда страницу убирают.
+const thumbs = new WeakMap<File, string>()
+function thumbUrl(f: File): string {
+  let url = thumbs.get(f)
+  if (!url) {
+    url = URL.createObjectURL(f)
+    thumbs.set(f, url)
+  }
+  return url
+}
+function forgetThumbs(files: File[]) {
+  for (const f of files) {
+    const url = thumbs.get(f)
+    if (url) URL.revokeObjectURL(url)
+    thumbs.delete(f)
+  }
+}
+
+// Превью выбранных фото с номерами страниц.
+function PagesPreview({ pages, disabled, onRemove }: { pages: File[]; disabled: boolean; onRemove: (f: File) => void }) {
+  return (
+    <ol className="pages-preview" aria-label="Страницы конспекта">
+      {pages.map((f, i) => (
+        <li key={`${f.name}:${f.size}`} className="page-thumb">
+          <img src={thumbUrl(f)} alt={`Страница ${i + 1}`} />
+          <span className="page-number">{i + 1}</span>
+          <button className="page-remove" onClick={() => onRemove(f)} disabled={disabled} aria-label={`Убрать страницу ${i + 1}`}>
+            <Icon src={icons.x} size={12} />
+          </button>
+          <span className="page-name" title={f.name}>
+            {f.name}
+          </span>
+        </li>
+      ))}
+    </ol>
   )
 }

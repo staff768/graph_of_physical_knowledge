@@ -211,6 +211,26 @@ a.context-link:hover { color: var(--text); }
 .upload-notice { max-width: 460px; font-size: 13px; line-height: 1.5; }
 .upload-notice.error { color: var(--danger); }
 .upload-notice a { color: var(--accent); }
+.upload-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.button.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.button.ghost:hover:not(:disabled) { color: var(--text); border-color: transparent; }
+.pages-preview { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; max-width: 100%; }
+.page-thumb { position: relative; width: 96px; display: flex; flex-direction: column; gap: 6px; }
+.page-thumb img {
+  width: 96px; height: 128px; object-fit: cover; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg);
+}
+.page-number {
+  position: absolute; left: 6px; top: 6px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
+  display: grid; place-items: center; background: var(--accent); color: var(--on-accent);
+  font-family: var(--font-serif); font-style: italic; font-size: 13px;
+}
+.page-remove {
+  position: absolute; right: 6px; top: 6px; width: 22px; height: 22px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+}
+.page-remove:hover:not(:disabled) { color: var(--danger); }
+.page-name { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .upload-privacy { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
 
 .explainer {

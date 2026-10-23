@@ -16,8 +16,11 @@ import (
 	"github.com/ledongthuc/pdf"
 )
 
-// MaxSize — максимальный размер загружаемого файла.
+// MaxSize — максимальный суммарный размер загрузки.
 const MaxSize = 25 << 20
+
+// MaxFiles — сколько фото страниц можно загрузить в один граф.
+const MaxFiles = 10
 
 var (
 	ErrUnsupported = errors.New("unsupported file type")
@@ -91,6 +94,32 @@ func Parse(mime string, data []byte) (Document, error) {
 		return nonEmpty(Document{Pages: []Page{{Text: normalize(string(data))}}})
 	}
 	return Document{}, ErrUnsupported
+}
+
+// Input — один загруженный файл с уже определённым типом (результат Kind).
+type Input struct {
+	MIME string
+	Data []byte
+}
+
+// ParseAll разбирает загрузку из одного или нескольких файлов. Несколько файлов —
+// это фото страниц рукописного конспекта: допускаются только изображения, их порядок
+// задаёт номера страниц. Документ (PDF, DOCX, TXT) загружается по одному.
+func ParseAll(files []Input) (Document, error) {
+	switch {
+	case len(files) == 0:
+		return Document{}, ErrNoText
+	case len(files) == 1:
+		return Parse(files[0].MIME, files[0].Data)
+	}
+	var doc Document
+	for _, f := range files {
+		if !strings.HasPrefix(f.MIME, "image/") {
+			return Document{}, fmt.Errorf("several files must all be images: %w", ErrUnsupported)
+		}
+		doc.Images = append(doc.Images, Image{MIME: f.MIME, Data: f.Data})
+	}
+	return doc, nil
 }
 
 // minTextPerPage — если текста меньше, считаем PDF сканом без текстового слоя.

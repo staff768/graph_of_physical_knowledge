@@ -211,7 +211,7 @@ func TestUploadJobLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	meta := domain.GraphMeta{ID: "test-job-1", Title: "lecture.pdf", Source: "lecture.pdf"}
-	up := Upload{Filename: "lecture.pdf", MIME: "application/pdf", Data: []byte("%PDF-1.4 test")}
+	up := []File{{Filename: "page1.jpg", MIME: "image/jpeg", Data: []byte("page-1")}, {Filename: "page2.jpg", MIME: "image/jpeg", Data: []byte("page-2")}}
 	if err := s.CreateFromUpload(ctx, meta, "hash-1", up); err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,8 @@ func TestUploadJobLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job.GraphID != "test-job-1" || string(job.Data) != "%PDF-1.4 test" {
+	// Файлы возвращаются в порядке страниц.
+	if job.GraphID != "test-job-1" || len(job.Files) != 2 || string(job.Files[0].Data) != "page-1" || job.Files[1].Filename != "page2.jpg" {
 		t.Errorf("job = %+v", job)
 	}
 	// Взятое задание повторно не выдаётся.

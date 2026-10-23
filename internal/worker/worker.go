@@ -82,7 +82,11 @@ const (
 )
 
 func (w *Worker) process(ctx context.Context, up storage.Upload) {
-	log := w.Log.With("graph", up.GraphID, "file", up.Filename)
+	first := ""
+	if len(up.Files) > 0 {
+		first = up.Files[0].Filename
+	}
+	log := w.Log.With("graph", up.GraphID, "file", first, "files", len(up.Files))
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, w.JobTimeout)
 	defer cancel()
@@ -102,7 +106,11 @@ func (w *Worker) process(ctx context.Context, up storage.Upload) {
 	}
 
 	_ = w.Store.SetStage(ctx, up.GraphID, builder.StageReading, "")
-	doc, err := document.Parse(up.MIME, up.Data)
+	inputs := make([]document.Input, len(up.Files))
+	for i, f := range up.Files {
+		inputs[i] = document.Input{MIME: f.MIME, Data: f.Data}
+	}
+	doc, err := document.ParseAll(inputs)
 	switch {
 	case errors.Is(err, document.ErrNoText):
 		fail(msgNoText, err)
@@ -137,7 +145,7 @@ func (w *Worker) process(ctx context.Context, up storage.Upload) {
 
 	title := res.Title
 	if title == "" {
-		title = strings.TrimSuffix(up.Filename, filepath.Ext(up.Filename))
+		title = strings.TrimSuffix(first, filepath.Ext(first))
 	}
 	if err := w.Store.CompleteGraph(ctx, up.GraphID, title, res.Section, pages, res.Graph); err != nil {
 		fail(msgInternal, err)

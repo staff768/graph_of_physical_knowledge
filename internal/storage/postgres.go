@@ -121,28 +121,47 @@ func replaceContent(ctx context.Context, tx pgx.Tx, graphID string, g domain.Gra
 	return tx.SendBatch(ctx, batch).Close()
 }
 
-// Upload — исходный файл графа, ожидающего обработки.
-type Upload struct {
-	GraphID  string
+// File — один загруженный файл: документ или фото страницы конспекта.
+type File struct {
 	Filename string
 	MIME     string
 	Data     []byte
 }
 
-// CreateFromUpload создаёт граф в статусе processing и сохраняет файл до конца обработки.
-func (s *Store) CreateFromUpload(ctx context.Context, meta domain.GraphMeta, sourceHash string, up Upload) error {
+// Upload — исходные файлы графа, ожидающего обработки, в порядке страниц.
+type Upload struct {
+	GraphID string
+	Files   []File
+}
+
+// CreateFromUpload создаёт граф в статусе processing и сохраняет файлы до конца обработки.
+func (s *Store) CreateFromUpload(ctx context.Context, meta domain.GraphMeta, sourceHash string, files []File) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO graphs (id, title, section, source, status, stage, source_hash)
-			VALUES ($1, $2, '', $3, 'processing', 'reading', $4)`,
-			meta.ID, meta.Title, meta.Source, sourceHash)
+			INSERT INTO graphs (id, title, section, source, status, stage, source_hash, pages)
+			VALUES ($1, $2, '', $3, 'processing', 'reading', $4, $5)`,
+			meta.ID, meta.Title, meta.Source, sourceHash, photoPages(files))
 		if err != nil {
 			return fmt.Errorf("insert graph: %w", err)
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO uploads (graph_id, filename, mime, data) VALUES ($1, $2, $3, $4)`,
-			meta.ID, up.Filename, up.MIME, up.Data)
-		return err
+		for i, f := range files {
+			_, err = tx.Exec(ctx, `INSERT INTO uploads (graph_id, position, filename, mime, data) VALUES ($1, $2, $3, $4, $5)`,
+				meta.ID, i, f.Filename, f.MIME, f.Data)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	})
+}
+
+// photoPages — число страниц, известное сразу: у загрузки из нескольких фото это число файлов.
+// Страницы документа становятся известны только после разбора.
+func photoPages(files []File) int {
+	if len(files) > 1 {
+		return len(files)
+	}
+	return 0
 }
 
 // GraphBySourceHash возвращает id готового или ещё строящегося графа из того же файла.
@@ -163,7 +182,7 @@ const (
 	maxJobAttempts = 3
 )
 
-// ClaimJob берёт следующий граф на обработку и возвращает его файл.
+// ClaimJob берёт следующий граф на обработку и возвращает его файлы.
 // Если заданий нет — ErrNotFound. Задание, которое не завершилось за jobLease
 // (например, сервер перезапустился), берётся повторно, но не больше maxJobAttempts раз.
 func (s *Store) ClaimJob(ctx context.Context) (Upload, error) {
@@ -194,9 +213,19 @@ func (s *Store) ClaimJob(ctx context.Context) (Upload, error) {
 		if err != nil {
 			return err
 		}
-		err = tx.QueryRow(ctx, `SELECT filename, mime, data FROM uploads WHERE graph_id = $1`, up.GraphID).
-			Scan(&up.Filename, &up.MIME, &up.Data)
-		if errors.Is(err, pgx.ErrNoRows) {
+		rows, err := tx.Query(ctx, `SELECT filename, mime, data FROM uploads WHERE graph_id = $1 ORDER BY position`, up.GraphID)
+		if err != nil {
+			return err
+		}
+		up.Files, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (File, error) {
+			var f File
+			err := r.Scan(&f.Filename, &f.MIME, &f.Data)
+			return f, err
+		})
+		if err != nil {
+			return err
+		}
+		if len(up.Files) == 0 {
 			// Файла нет — обработать нечего; помечаем ошибкой, чтобы задание не повторялось.
 			missing = true
 			_, err = tx.Exec(ctx, `UPDATE graphs SET status = 'failed', error = $2, locked_at = NULL WHERE id = $1`,

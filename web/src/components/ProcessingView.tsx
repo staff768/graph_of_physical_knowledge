@@ -43,7 +43,9 @@ export function ProcessingView({ meta, onDone }: { meta: GraphMeta; onDone: () =
         <div className="processing-progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
           <span style={{ width: `${progress}%` }} />
         </div>
-        <p className="processing-hint">Обычно это занимает 1–2 минуты</p>
+        <p className="processing-hint">
+          {(meta.pages ?? 1) > 1 ? `Около минуты на каждую страницу · ${meta.pages} стр.` : 'Обычно это занимает 1–2 минуты'}
+        </p>
         <ol className="processing-steps">
           {stages.map((s, i) => {
             const state = i < active ? 'done' : i === active ? 'active' : 'waiting'

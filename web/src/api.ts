@@ -122,9 +122,10 @@ export const api = {
   chain: (id: string, slug: string, signal?: AbortSignal) =>
     get<Explanation>(`${graphBase(id)}/nodes/${enc(slug)}/chain`, signal),
   search: (id: string, q: string, signal?: AbortSignal) => get<GraphNode[]>(`${graphBase(id)}/search?q=${enc(q)}`, signal),
-  upload: async (file: File): Promise<{ id: string; existing?: boolean }> => {
+  // Один документ или несколько фото страниц — в порядке страниц.
+  upload: async (files: File[]): Promise<{ id: string; existing?: boolean }> => {
     const form = new FormData()
-    form.append('file', file)
+    for (const f of files) form.append('file', f)
     const res = await fetch('/api/graphs', { method: 'POST', body: form })
     const body = await res.json().catch(() => ({}))
     if (!res.ok) throw new ApiError(res.status, body.error ?? `HTTP ${res.status}`)

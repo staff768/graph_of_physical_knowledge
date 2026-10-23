@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -21,7 +23,7 @@ import (
 
 // UploadStore — то, что загрузке нужно от хранилища.
 type UploadStore interface {
-	CreateFromUpload(ctx context.Context, meta domain.GraphMeta, sourceHash string, up storage.Upload) error
+	CreateFromUpload(ctx context.Context, meta domain.GraphMeta, sourceHash string, files []storage.File) error
 	GraphBySourceHash(ctx context.Context, hash string) (string, error)
 }
 
@@ -38,10 +40,14 @@ type Uploads struct {
 
 type uploadResponse struct {
 	ID string `json:"id"`
-	// Existing — этот файл уже загружали, возвращён существующий граф.
+	// Existing — эти файлы уже загружали, возвращён существующий граф.
 	Existing bool `json:"existing,omitempty"`
 }
 
+const msgUnsupported = "Этот формат не поддерживается. Подойдут PDF, DOCX, TXT, JPG и PNG."
+
+// upload принимает конспект: один документ (PDF, DOCX, TXT) или до MaxFiles фото страниц
+// в полях file — в порядке страниц.
 func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	u := h.uploads
 	if u == nil {
@@ -49,35 +55,56 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, document.MaxSize+1<<20)
-	file, header, err := r.FormFile("file")
-	if err != nil {
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			writeError(w, http.StatusRequestEntityTooLarge, "Файл больше 25 МБ.")
+			writeError(w, http.StatusRequestEntityTooLarge, "Файлы вместе больше 25 МБ.")
 			return
 		}
 		writeError(w, http.StatusBadRequest, "Прикрепите файл конспекта в поле file.")
 		return
 	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, document.MaxSize+1))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "Не удалось прочитать файл.")
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
+	headers := r.MultipartForm.File["file"]
+	switch {
+	case len(headers) == 0:
+		writeError(w, http.StatusBadRequest, "Прикрепите файл конспекта в поле file.")
 		return
-	}
-	if len(data) > document.MaxSize {
-		writeError(w, http.StatusRequestEntityTooLarge, "Файл больше 25 МБ.")
-		return
-	}
-	mime, err := document.Kind(header.Filename, data)
-	if err != nil {
-		writeError(w, http.StatusUnsupportedMediaType, "Этот формат не поддерживается. Подойдут PDF, DOCX, TXT, JPG и PNG.")
+	case len(headers) > document.MaxFiles:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("Можно загрузить не больше %d фото за раз.", document.MaxFiles))
 		return
 	}
 
-	// Тот же файл уже обрабатывали — отдаём готовый граф, не тратя запросы к модели.
-	sum := sha256.Sum256(data)
-	hash := hex.EncodeToString(sum[:])
+	files := make([]storage.File, 0, len(headers))
+	total := 0
+	hasher := sha256.New()
+	for _, fh := range headers {
+		data, err := readPart(fh)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "Не удалось прочитать файл.")
+			return
+		}
+		if total += len(data); total > document.MaxSize {
+			writeError(w, http.StatusRequestEntityTooLarge, "Файлы вместе больше 25 МБ.")
+			return
+		}
+		mime, err := document.Kind(fh.Filename, data)
+		if err != nil {
+			writeError(w, http.StatusUnsupportedMediaType, msgUnsupported)
+			return
+		}
+		if len(headers) > 1 && !strings.HasPrefix(mime, "image/") {
+			writeError(w, http.StatusUnsupportedMediaType, "Несколько файлов можно загрузить, только если это фото страниц (JPG или PNG). Документ загружайте по одному.")
+			return
+		}
+		files = append(files, storage.File{Filename: filepath.Base(fh.Filename), MIME: mime, Data: data})
+		// Хэш учитывает границы файлов, чтобы разные наборы страниц не совпадали случайно.
+		fmt.Fprintf(hasher, "%d:", len(data))
+		hasher.Write(data)
+	}
+
+	// Те же файлы уже обрабатывали — отдаём готовый граф, не тратя запросы к модели.
+	hash := hex.EncodeToString(hasher.Sum(nil))
 	if id, err := u.Store.GraphBySourceHash(r.Context(), hash); err == nil {
 		writeJSON(w, http.StatusOK, uploadResponse{ID: id, Existing: true})
 		return
@@ -91,9 +118,13 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name := filepath.Base(header.Filename)
-	meta := domain.GraphMeta{ID: newGraphID(), Title: titleFromFilename(name), Source: name}
-	if err := u.Store.CreateFromUpload(r.Context(), meta, hash, storage.Upload{Filename: name, MIME: mime, Data: data}); err != nil {
+	first := files[0].Filename
+	source := first
+	if len(files) > 1 {
+		source = fmt.Sprintf("%s и ещё %d фото", first, len(files)-1)
+	}
+	meta := domain.GraphMeta{ID: newGraphID(), Title: titleFromFilename(first), Source: source}
+	if err := u.Store.CreateFromUpload(r.Context(), meta, hash, files); err != nil {
 		h.internalError(w, err)
 		return
 	}
@@ -101,6 +132,15 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		u.Notify()
 	}
 	writeJSON(w, http.StatusAccepted, uploadResponse{ID: meta.ID})
+}
+
+func readPart(fh *multipart.FileHeader) ([]byte, error) {
+	f, err := fh.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(io.LimitReader(f, document.MaxSize+1))
 }
 
 func titleFromFilename(name string) string {

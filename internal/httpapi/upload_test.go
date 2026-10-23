@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,12 +20,17 @@ import (
 )
 
 type fakeUploads struct {
-	created map[string]storage.Upload // hash → файл
+	created map[string][]storage.File // hash → файлы
 	ids     map[string]string         // hash → id графа
+	metas   map[string]domain.GraphMeta
 }
 
-func (f *fakeUploads) CreateFromUpload(_ context.Context, meta domain.GraphMeta, hash string, up storage.Upload) error {
-	f.created[hash], f.ids[hash] = up, meta.ID
+func newFakeUploads() *fakeUploads {
+	return &fakeUploads{created: map[string][]storage.File{}, ids: map[string]string{}, metas: map[string]domain.GraphMeta{}}
+}
+
+func (f *fakeUploads) CreateFromUpload(_ context.Context, meta domain.GraphMeta, hash string, files []storage.File) error {
+	f.created[hash], f.ids[hash], f.metas[hash] = files, meta.ID, meta
 	return nil
 }
 
@@ -34,15 +41,27 @@ func (f *fakeUploads) GraphBySourceHash(_ context.Context, hash string) (string,
 	return "", storage.ErrNotFound
 }
 
+type part struct {
+	name string
+	data []byte
+}
+
 func postFile(t *testing.T, h http.Handler, name string, data []byte) (int, map[string]any) {
+	t.Helper()
+	return postFiles(t, h, part{name, data})
+}
+
+func postFiles(t *testing.T, h http.Handler, parts ...part) (int, map[string]any) {
 	t.Helper()
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
-	fw, err := mw.CreateFormFile("file", name)
-	if err != nil {
-		t.Fatal(err)
+	for _, p := range parts {
+		fw, err := mw.CreateFormFile("file", p.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = fw.Write(p.data)
 	}
-	_, _ = fw.Write(data)
 	_ = mw.Close()
 	req := httptest.NewRequest(http.MethodPost, "/api/graphs", &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
@@ -61,7 +80,7 @@ func TestUploadDisabled(t *testing.T) {
 }
 
 func TestUpload(t *testing.T) {
-	store := &fakeUploads{created: map[string]storage.Upload{}, ids: map[string]string{}}
+	store := newFakeUploads()
 	notified := 0
 	h := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, &Uploads{
 		Store: store, Notify: func() { notified++ }, PerHour: 2,
@@ -78,9 +97,9 @@ func TestUpload(t *testing.T) {
 	if notified != 1 || len(store.created) != 1 {
 		t.Errorf("notified = %d, created = %d", notified, len(store.created))
 	}
-	for _, up := range store.created {
-		if up.MIME != "text/plain" || up.Filename != "Механика_лекция_03.txt" {
-			t.Errorf("upload = %+v", up)
+	for _, files := range store.created {
+		if len(files) != 1 || files[0].MIME != "text/plain" || files[0].Filename != "Механика_лекция_03.txt" {
+			t.Errorf("upload = %+v", files)
 		}
 	}
 
@@ -123,5 +142,38 @@ func TestTitleFromFilename(t *testing.T) {
 	}
 	if got := titleFromFilename(".pdf"); got != "Конспект" {
 		t.Errorf("title = %q", got)
+	}
+}
+
+func TestUploadSeveralPhotos(t *testing.T) {
+	store := newFakeUploads()
+	h := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, &Uploads{Store: store, PerHour: 10})
+	png := []byte("\x89PNG\r\n\x1a\n" + strings.Repeat("\x00", 32))
+	jpg := []byte("\xff\xd8\xff\xe0" + strings.Repeat("\x00", 32))
+
+	code, body := postFiles(t, h, part{"IMG_0412.jpg", jpg}, part{"IMG_0413.png", png}, part{"IMG_0414.jpg", jpg})
+	if code != http.StatusAccepted {
+		t.Fatalf("code = %d, body = %v", code, body)
+	}
+	for hash, files := range store.created {
+		if len(files) != 3 || files[0].Filename != "IMG_0412.jpg" || files[1].MIME != "image/png" {
+			t.Errorf("files = %+v", files)
+		}
+		if m := store.metas[hash]; m.Title != "IMG 0412" || m.Source != "IMG_0412.jpg и ещё 2 фото" {
+			t.Errorf("meta = %+v", m)
+		}
+	}
+
+	// Документ вперемешку с фото — нельзя.
+	if code, _ := postFiles(t, h, part{"a.jpg", jpg}, part{"notes.txt", []byte("Закон Ома")}); code != http.StatusUnsupportedMediaType {
+		t.Errorf("mixed: code = %d, want 415", code)
+	}
+	// Больше MaxFiles фото — нельзя.
+	many := make([]part, 11)
+	for i := range many {
+		many[i] = part{fmt.Sprintf("p%d.jpg", i), jpg}
+	}
+	if code, _ := postFiles(t, h, many...); code != http.StatusBadRequest {
+		t.Errorf("too many: code = %d, want 400", code)
 	}
 }

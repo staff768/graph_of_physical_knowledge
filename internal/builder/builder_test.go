@@ -277,3 +277,40 @@ func TestBuildAsksModelWhenGraphIsBadlyBroken(t *testing.T) {
 		t.Errorf("graph = %+v", res.Graph)
 	}
 }
+
+func TestBuildMultiPagePhotos(t *testing.T) {
+	page1 := `{"title": "Ток", "section": "Электродинамика", "nodes": [
+		{"slug": "ohm", "type": "law", "title": "Закон Ома", "origin": "explicit", "quote": "Закон Ома", "page": 1},
+		{"slug": "ohm-f", "type": "formula", "title": "I = U/R", "origin": "explicit", "quote": "I = U/R", "page": 1}
+	], "edges": [{"from": "ohm", "to": "ohm-f", "type": "formulates", "origin": "explicit"}]}`
+	page2 := `{"nodes": [
+		{"slug": "short", "type": "phenomenon", "title": "Короткое замыкание", "origin": "explicit", "quote": "КЗ", "page": 2}
+	], "edges": [{"from": "ohm-f", "to": "short", "type": "explains", "origin": "explicit"}]}`
+	m := &scripted{replies: map[string][]any{"extract": {page1, page2}}}
+	doc := document.Document{Images: []document.Image{{MIME: "image/jpeg", Data: []byte("a")}, {MIME: "image/jpeg", Data: []byte("b")}}}
+	var notes []string
+	res, err := (&Builder{LLM: m}).Build(context.Background(), doc, func(stage, note string) {
+		if stage == StageExtracting {
+			notes = append(notes, note)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.calls) != 2 || len(m.calls[1].Messages[1].Images) != 1 {
+		t.Fatalf("calls = %d", len(m.calls))
+	}
+	if !strings.Contains(m.calls[1].Messages[1].Text, "Страница 2 из 2") || !strings.Contains(m.calls[1].Messages[1].Text, "page = 2") {
+		t.Errorf("second request should name page 2: %q", m.calls[1].Messages[1].Text)
+	}
+	if !strings.HasPrefix(notes[0], "страница 1 из 2") || !strings.HasPrefix(notes[1], "страница 2 из 2") {
+		t.Errorf("progress notes = %q", notes)
+	}
+	pages := map[string]int{}
+	for _, n := range res.Graph.Nodes {
+		pages[n.Slug] = n.SourcePage
+	}
+	if pages["ohm"] != 1 || pages["short"] != 2 || len(res.Graph.Edges) != 2 {
+		t.Errorf("pages = %v, edges = %d", pages, len(res.Graph.Edges))
+	}
+}

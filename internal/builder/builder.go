@@ -113,7 +113,10 @@ func (b *Builder) Build(ctx context.Context, doc document.Document, progress Pro
 	parts := b.split(doc)
 	for i, part := range parts {
 		note := "ищу понятия и формулы"
-		if len(parts) > 1 {
+		switch {
+		case len(parts) > 1 && part.page > 0:
+			note = fmt.Sprintf("страница %d из %d", part.page, len(parts))
+		case len(parts) > 1:
 			note = fmt.Sprintf("часть %d из %d", i+1, len(parts))
 		}
 		if n := len(draft.Nodes); n > 0 {
@@ -175,17 +178,20 @@ func (b *Builder) Build(ctx context.Context, doc document.Document, progress Pro
 type part struct {
 	text   string
 	images []llm.Image
+	page   int // номер страницы для частей-фото, 0 — для текста
 }
 
 // split режет документ на части: изображения — по одному, текст — по страницам
 // до ChunkRunes символов. Страницы помечаются [стр. N], чтобы модель указывала их в цитатах.
 func (b *Builder) split(doc document.Document) []part {
 	var parts []part
-	for _, img := range doc.Images {
-		parts = append(parts, part{
-			text:   "Конспект — на изображении. Прочитай его внимательно, включая рукописный текст и формулы.",
-			images: []llm.Image{{MIME: img.MIME, Data: img.Data}},
-		})
+	for i, img := range doc.Images {
+		text := "Конспект — на изображении. Прочитай его внимательно, включая рукописный текст и формулы."
+		if len(doc.Images) > 1 {
+			text = fmt.Sprintf("Страница %d из %d конспекта — на изображении. Прочитай её внимательно, включая рукописный текст и формулы. "+
+				"У всех понятий и связей, взятых с этой страницы, укажи page = %d.", i+1, len(doc.Images), i+1)
+		}
+		parts = append(parts, part{text: text, images: []llm.Image{{MIME: img.MIME, Data: img.Data}}, page: i + 1})
 	}
 	limit := b.ChunkRunes
 	if limit <= 0 {
