@@ -22,14 +22,15 @@ import (
 // Store — то, что API требует от хранилища.
 type Store interface {
 	Ping(ctx context.Context) error
-	ListGraphs(ctx context.Context, query string) ([]domain.GraphMeta, error)
+	ListGraphs(ctx context.Context, owner, query string) ([]domain.GraphMeta, error)
 	GraphMeta(ctx context.Context, graphID string) (domain.GraphMeta, error)
 	Graph(ctx context.Context, graphID string) (domain.Graph, error)
 	Node(ctx context.Context, graphID, slug string) (domain.Node, error)
 	Neighbors(ctx context.Context, graphID, slug string) (incoming, outgoing []domain.Link, err error)
 	Ancestors(ctx context.Context, graphID, slug string) (domain.Graph, error)
 	Search(ctx context.Context, graphID, query string, limit int) ([]domain.Node, error)
-	DeleteGraph(ctx context.Context, graphID string) error
+	DeleteGraph(ctx context.Context, graphID, owner string) error
+	OwnerStats(ctx context.Context, owner string) (storage.OwnerStats, error)
 }
 
 type handler struct {
@@ -56,6 +57,7 @@ func New(store Store, log *slog.Logger, static fs.FS, uploads *Uploads, stories 
 	r.Use(h.logRequests)
 
 	r.Route("/api", func(r chi.Router) {
+		r.Use(withOwner)
 		// Загрузка файла до 25 МБ может идти дольше обычного запроса.
 		r.With(middleware.Timeout(2*time.Minute)).Post("/graphs", h.upload)
 		// Модель пишет рассказ 10–30 секунд.
@@ -64,6 +66,7 @@ func New(store Store, log *slog.Logger, static fs.FS, uploads *Uploads, stories 
 			r.Use(middleware.Timeout(15 * time.Second))
 			r.Get("/health", h.health)
 			r.Get("/graphs", h.listGraphs)
+			r.Get("/me", h.me)
 			r.Route("/graphs/{graphID}", func(r chi.Router) {
 				r.Use(h.requireGraph)
 				r.Get("/", h.graph)
@@ -110,6 +113,7 @@ func (h *handler) requireGraph(next http.Handler) http.Handler {
 			h.internalError(w, err)
 			return
 		}
+		markMine(&meta, ownerFrom(r))
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), graphMetaKey{}, meta)))
 	})
 }
@@ -127,10 +131,14 @@ func (h *handler) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) listGraphs(w http.ResponseWriter, r *http.Request) {
-	graphs, err := h.store.ListGraphs(r.Context(), r.URL.Query().Get("q"))
+	owner := ownerFrom(r)
+	graphs, err := h.store.ListGraphs(r.Context(), owner, r.URL.Query().Get("q"))
 	if err != nil {
 		h.internalError(w, err)
 		return
+	}
+	for i := range graphs {
+		markMine(&graphs[i], owner)
 	}
 	writeJSON(w, http.StatusOK, graphs)
 }
@@ -195,10 +203,12 @@ func (h *handler) chain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) deleteGraph(w http.ResponseWriter, r *http.Request) {
-	err := h.store.DeleteGraph(r.Context(), graphFrom(r).ID)
+	err := h.store.DeleteGraph(r.Context(), graphFrom(r).ID, ownerFrom(r))
 	switch {
 	case errors.Is(err, storage.ErrDemoGraph):
 		writeError(w, http.StatusForbidden, "Демо-граф удалить нельзя.")
+	case errors.Is(err, storage.ErrNotOwner):
+		writeError(w, http.StatusForbidden, "Удалить можно только свой граф.")
 	case errors.Is(err, storage.ErrNotFound):
 		writeError(w, http.StatusNotFound, "graph not found")
 	case err != nil:

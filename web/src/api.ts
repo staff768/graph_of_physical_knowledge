@@ -90,6 +90,17 @@ export interface GraphMeta {
   stageNote?: string
   error?: string
   pages?: number
+  // Граф принадлежит этому браузеру — его можно удалить.
+  mine: boolean
+}
+
+// Сводка личного пространства для профиля.
+export interface OwnerStats {
+  graphs: number
+  concepts: number
+  links: number
+  stories: number
+  sections: { section: string; graphs: number }[]
 }
 
 export interface GraphData extends Graph {
@@ -122,6 +133,7 @@ export const api = {
   node: (id: string, slug: string, signal?: AbortSignal) => get<NodeDetails>(`${graphBase(id)}/nodes/${enc(slug)}`, signal),
   chain: (id: string, slug: string, signal?: AbortSignal) =>
     get<Explanation>(`${graphBase(id)}/nodes/${enc(slug)}/chain`, signal),
+  me: (signal?: AbortSignal) => get<OwnerStats>('/api/me', signal),
   // Связный рассказ модели по цепочке: GET — только сохранённый (404, если нет), POST — написать.
   story: (id: string, slug: string, signal?: AbortSignal) =>
     get<{ text: string }>(`${graphBase(id)}/nodes/${enc(slug)}/story`, signal),

@@ -113,6 +113,11 @@ type GraphMeta struct {
 	StageNote string      `json:"stageNote,omitempty" yaml:"-"` // подробность этапа, например «найдено 9 понятий»
 	Error     string      `json:"error,omitempty" yaml:"-"`     // причина ошибки для пользователя
 	Pages     int         `json:"pages,omitempty" yaml:"-"`
+
+	// Owner — хэш личного ключа владельца; пусто у демо-графа и старых графов.
+	Owner string `json:"-" yaml:"-"`
+	// Mine — граф принадлежит тому, кто спрашивает (его можно удалить).
+	Mine bool `json:"mine" yaml:"-"`
 }
 
 // Link — связь узла с соседом, вместе с краткими данными соседа.

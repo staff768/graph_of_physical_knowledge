@@ -92,7 +92,7 @@ export function GraphCard({ meta, tint, favorite, onToggleFavorite, layout = 'gr
                   <button role="menuitem" onMouseDown={onToggleFavorite}>
                     {favorite ? 'Убрать из избранного' : 'В избранное'}
                   </button>
-                  {!meta.demo && (
+                  {meta.mine && (
                     <button role="menuitem" className="danger" onMouseDown={() => setConfirming(true)}>
                       Удалить
                     </button>

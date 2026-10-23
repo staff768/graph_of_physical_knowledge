@@ -3,6 +3,9 @@ package storage
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -21,6 +24,9 @@ var ErrNotFound = errors.New("not found")
 
 // ErrDemoGraph — демо-граф нельзя удалить: его загружает seed, он нужен для примера.
 var ErrDemoGraph = errors.New("demo graph cannot be deleted")
+
+// ErrNotOwner — граф принадлежит другому владельцу.
+var ErrNotOwner = errors.New("graph belongs to another owner")
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -80,15 +86,31 @@ func (s *Store) Migrate(ctx context.Context) error {
 
 // ReplaceGraph атомарно создаёт граф или полностью заменяет его содержимое.
 // Другие графы не затрагиваются.
+// Если содержимое не изменилось с прошлого раза, понятия не перезаписываются —
+// так повторный seed не стирает рассказы ИИ по демо-графу.
 func (s *Store) ReplaceGraph(ctx context.Context, meta domain.GraphMeta, g domain.Graph) error {
+	raw, err := json.Marshal(g)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(raw)
+	hash := "content:" + hex.EncodeToString(sum[:])
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
+		var prev string
+		err := tx.QueryRow(ctx, `
 			INSERT INTO graphs (id, title, section, source, is_demo) VALUES ($1, $2, $3, $4, $5)
 			ON CONFLICT (id) DO UPDATE
-			SET title = EXCLUDED.title, section = EXCLUDED.section, source = EXCLUDED.source, is_demo = EXCLUDED.is_demo`,
-			meta.ID, meta.Title, meta.Section, meta.Source, meta.Demo)
+			SET title = EXCLUDED.title, section = EXCLUDED.section, source = EXCLUDED.source, is_demo = EXCLUDED.is_demo
+			RETURNING coalesce((SELECT source_hash FROM graphs WHERE id = $1), '')`,
+			meta.ID, meta.Title, meta.Section, meta.Source, meta.Demo).Scan(&prev)
 		if err != nil {
 			return fmt.Errorf("upsert graph %q: %w", meta.ID, err)
+		}
+		if prev == hash {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `UPDATE graphs SET source_hash = $2 WHERE id = $1`, meta.ID, hash); err != nil {
+			return err
 		}
 		return replaceContent(ctx, tx, meta.ID, g)
 	})
@@ -144,9 +166,9 @@ type Upload struct {
 func (s *Store) CreateFromUpload(ctx context.Context, meta domain.GraphMeta, sourceHash string, files []File) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO graphs (id, title, section, source, status, stage, source_hash, pages)
-			VALUES ($1, $2, '', $3, 'processing', 'reading', $4, $5)`,
-			meta.ID, meta.Title, meta.Source, sourceHash, photoPages(files))
+			INSERT INTO graphs (id, title, section, source, status, stage, source_hash, pages, owner)
+			VALUES ($1, $2, '', $3, 'processing', 'reading', $4, $5, NULLIF($6, ''))`,
+			meta.ID, meta.Title, meta.Source, sourceHash, photoPages(files), meta.Owner)
 		if err != nil {
 			return fmt.Errorf("insert graph: %w", err)
 		}
@@ -170,12 +192,14 @@ func photoPages(files []File) int {
 	return 0
 }
 
-// GraphBySourceHash возвращает id готового или ещё строящегося графа из того же файла.
-func (s *Store) GraphBySourceHash(ctx context.Context, hash string) (string, error) {
+// GraphBySourceHash возвращает id готового или ещё строящегося графа владельца owner из того же файла.
+// Чужие графы не находятся: у каждого свой граф по своему конспекту.
+func (s *Store) GraphBySourceHash(ctx context.Context, owner, hash string) (string, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `
 		SELECT id FROM graphs WHERE source_hash = $1 AND status IN ('processing', 'ready')
-		ORDER BY created_at DESC LIMIT 1`, hash).Scan(&id)
+			AND coalesce(owner, '') = $2
+		ORDER BY created_at DESC LIMIT 1`, hash, owner).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrNotFound
 	}
@@ -287,9 +311,10 @@ func (s *Store) FailGraph(ctx context.Context, graphID, reason string) error {
 // previewSize — сколько понятий показывать в превью графа.
 const previewSize = 4
 
-// ListGraphs возвращает графы, начиная с самых новых. Если query не пуст,
-// остаются графы, в названии или понятиях которых встречается query.
-func (s *Store) ListGraphs(ctx context.Context, query string) ([]domain.GraphMeta, error) {
+// ListGraphs возвращает графы владельца owner, демо-граф и старые графы без владельца,
+// начиная с самых новых. Если query не пуст, остаются графы, в названии или понятиях
+// которых встречается query.
+func (s *Store) ListGraphs(ctx context.Context, owner, query string) ([]domain.GraphMeta, error) {
 	pattern := "%" + escapeLike(strings.ToLower(strings.TrimSpace(query))) + "%"
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+metaColumns+`,
@@ -302,10 +327,11 @@ func (s *Store) ListGraphs(ctx context.Context, query string) ([]domain.GraphMet
 				LIMIT $2
 			)
 		FROM graphs g
-		WHERE $1 = '%%'
-			OR lower(g.title) LIKE $1
-			OR EXISTS (SELECT 1 FROM nodes n WHERE n.graph_id = g.id AND lower(n.title) LIKE $1)
-		ORDER BY g.created_at DESC, g.id`, pattern, previewSize)
+		WHERE (g.is_demo OR g.owner IS NULL OR g.owner = $3)
+			AND ($1 = '%%'
+				OR lower(g.title) LIKE $1
+				OR EXISTS (SELECT 1 FROM nodes n WHERE n.graph_id = g.id AND lower(n.title) LIKE $1))
+		ORDER BY g.created_at DESC, g.id`, pattern, previewSize, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -319,17 +345,19 @@ func (s *Store) ListGraphs(ctx context.Context, query string) ([]domain.GraphMet
 const metaColumns = `g.id, g.title, g.section, g.source, g.is_demo, g.created_at,
 	(SELECT count(*) FROM nodes n WHERE n.graph_id = g.id),
 	(SELECT count(*) FROM edges e WHERE e.graph_id = g.id),
-	g.status, g.stage, g.stage_note, g.error, g.pages`
+	g.status, g.stage, g.stage_note, g.error, g.pages, coalesce(g.owner, '')`
 
 func metaDest(m *domain.GraphMeta) []any {
 	return []any{&m.ID, &m.Title, &m.Section, &m.Source, &m.Demo, &m.CreatedAt, &m.NodeCount, &m.EdgeCount,
-		&m.Status, &m.Stage, &m.StageNote, &m.Error, &m.Pages}
+		&m.Status, &m.Stage, &m.StageNote, &m.Error, &m.Pages, &m.Owner}
 }
 
 // DeleteGraph удаляет граф вместе с понятиями, связями и файлами (каскадом).
-func (s *Store) DeleteGraph(ctx context.Context, graphID string) error {
+// Удалить можно только свой граф или старый граф без владельца.
+func (s *Store) DeleteGraph(ctx context.Context, graphID, owner string) error {
 	var demo bool
-	err := s.pool.QueryRow(ctx, `SELECT is_demo FROM graphs WHERE id = $1`, graphID).Scan(&demo)
+	var graphOwner string
+	err := s.pool.QueryRow(ctx, `SELECT is_demo, coalesce(owner, '') FROM graphs WHERE id = $1`, graphID).Scan(&demo, &graphOwner)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -338,6 +366,9 @@ func (s *Store) DeleteGraph(ctx context.Context, graphID string) error {
 	}
 	if demo {
 		return ErrDemoGraph
+	}
+	if graphOwner != "" && graphOwner != owner {
+		return ErrNotOwner
 	}
 	_, err = s.pool.Exec(ctx, `DELETE FROM graphs WHERE id = $1`, graphID)
 	return err
@@ -517,4 +548,48 @@ func (s *Store) SaveStory(ctx context.Context, graphID, slug, text, model string
 		ON CONFLICT (graph_id, slug) DO UPDATE SET text = EXCLUDED.text, model = EXCLUDED.model, created_at = now()`,
 		graphID, slug, text, model)
 	return err
+}
+
+// OwnerStats — сводка личного пространства для профиля.
+type OwnerStats struct {
+	Graphs   int `json:"graphs"`
+	Concepts int `json:"concepts"`
+	Links    int `json:"links"`
+	Stories  int `json:"stories"`
+	// Sections — сколько графов по каждому разделу физики, самые частые первыми.
+	Sections []SectionCount `json:"sections"`
+}
+
+type SectionCount struct {
+	Section string `json:"section"`
+	Graphs  int    `json:"graphs"`
+}
+
+// OwnerStats считает готовые графы владельца, их понятия, связи и рассказы ИИ.
+func (s *Store) OwnerStats(ctx context.Context, owner string) (OwnerStats, error) {
+	st := OwnerStats{Sections: []SectionCount{}}
+	if owner == "" {
+		return st, nil
+	}
+	err := s.pool.QueryRow(ctx, `
+		SELECT count(*),
+			coalesce(sum((SELECT count(*) FROM nodes n WHERE n.graph_id = g.id)), 0),
+			coalesce(sum((SELECT count(*) FROM edges e WHERE e.graph_id = g.id)), 0),
+			coalesce(sum((SELECT count(*) FROM stories st WHERE st.graph_id = g.id)), 0)
+		FROM graphs g WHERE g.owner = $1 AND g.status = 'ready'`, owner).Scan(&st.Graphs, &st.Concepts, &st.Links, &st.Stories)
+	if err != nil {
+		return st, err
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT section, count(*) FROM graphs
+		WHERE owner = $1 AND status = 'ready' AND section <> ''
+		GROUP BY section ORDER BY count(*) DESC, section`, owner)
+	if err != nil {
+		return st, err
+	}
+	st.Sections, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (SectionCount, error) {
+		var c SectionCount
+		return c, r.Scan(&c.Section, &c.Graphs)
+	})
+	return st, err
 }

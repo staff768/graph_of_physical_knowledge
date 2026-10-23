@@ -119,7 +119,7 @@ func TestListGraphs(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	all, err := s.ListGraphs(ctx, "")
+	all, err := s.ListGraphs(ctx, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestListGraphs(t *testing.T) {
 
 	// Поиск находит граф и по названию, и по понятию внутри него.
 	for _, q := range []string{"граф а", "явление"} {
-		res, err := s.ListGraphs(ctx, q)
+		res, err := s.ListGraphs(ctx, "", q)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -215,7 +215,7 @@ func TestUploadJobLifecycle(t *testing.T) {
 	if err := s.CreateFromUpload(ctx, meta, "hash-1", up); err != nil {
 		t.Fatal(err)
 	}
-	if id, err := s.GraphBySourceHash(ctx, "hash-1"); err != nil || id != "test-job-1" {
+	if id, err := s.GraphBySourceHash(ctx, "", "hash-1"); err != nil || id != "test-job-1" {
 		t.Errorf("by hash = %q, %v", id, err)
 	}
 
@@ -281,7 +281,7 @@ func TestUploadJobLifecycle(t *testing.T) {
 	if m.Status != domain.StatusFailed || m.Error != "В файле нет физики" {
 		t.Errorf("failed meta = %+v", m)
 	}
-	if _, err := s.GraphBySourceHash(ctx, "hash-2"); !errors.Is(err, ErrNotFound) {
+	if _, err := s.GraphBySourceHash(ctx, "", "hash-2"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("failed graph found by hash: %v", err)
 	}
 }
@@ -313,19 +313,19 @@ func TestClaimJobWithoutUpload(t *testing.T) {
 func TestDeleteGraph(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	if err := s.DeleteGraph(ctx, "test-b"); err != nil {
+	if err := s.DeleteGraph(ctx, "test-b", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.GraphMeta(ctx, "test-b"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("after delete: %v", err)
 	}
-	if err := s.DeleteGraph(ctx, "test-b"); !errors.Is(err, ErrNotFound) {
+	if err := s.DeleteGraph(ctx, "test-b", ""); !errors.Is(err, ErrNotFound) {
 		t.Errorf("second delete: %v", err)
 	}
 	if err := s.ReplaceGraph(ctx, domain.GraphMeta{ID: "test-demo", Title: "Демо", Demo: true}, domain.Graph{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteGraph(ctx, "test-demo"); !errors.Is(err, ErrDemoGraph) {
+	if err := s.DeleteGraph(ctx, "test-demo", ""); !errors.Is(err, ErrDemoGraph) {
 		t.Errorf("demo delete: %v", err)
 	}
 	// Граф test-a не пострадал.
@@ -349,12 +349,81 @@ func TestStories(t *testing.T) {
 	if text, err := s.Story(ctx, "test-a", "x"); err != nil || text != "второй" {
 		t.Errorf("story = %q, %v", text, err)
 	}
-	// Перестройка графа сбрасывает рассказы.
+	// Повторная загрузка того же содержимого (seed) рассказы не трогает.
 	g, _ := s.Graph(ctx, "test-a")
+	if err := s.ReplaceGraph(ctx, domain.GraphMeta{ID: "test-a", Title: "A"}, g); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReplaceGraph(ctx, domain.GraphMeta{ID: "test-a", Title: "A"}, g); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Story(ctx, "test-a", "x"); err != nil {
+		t.Errorf("story after same-content replace: %v", err)
+	}
+	// Изменённый граф — рассказы сбрасываются.
+	g.Nodes[0].Summary = "новое описание"
 	if err := s.ReplaceGraph(ctx, domain.GraphMeta{ID: "test-a", Title: "A"}, g); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Story(ctx, "test-a", "x"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("story after replace: %v", err)
+	}
+}
+
+func TestOwnerSpaces(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if _, err := s.pool.Exec(ctx, `DELETE FROM graphs WHERE id LIKE 'test-own-%'`); err != nil {
+		t.Fatal(err)
+	}
+	files := []File{{Filename: "a.txt", MIME: "text/plain", Data: []byte("x")}}
+	for _, g := range []struct{ id, owner string }{{"test-own-alice", "alice"}, {"test-own-bob", "bob"}} {
+		if err := s.CreateFromUpload(ctx, domain.GraphMeta{ID: g.id, Title: g.id, Owner: g.owner}, "same-hash", files); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids := func(owner string) map[string]bool {
+		list, err := s.ListGraphs(ctx, owner, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]bool{}
+		for _, m := range list {
+			out[m.ID] = true
+		}
+		return out
+	}
+	if a := ids("alice"); !a["test-own-alice"] || a["test-own-bob"] || !a["test-a"] {
+		t.Errorf("alice sees %v: want own graph and ownerless test-a, not bob's", a)
+	}
+	// Тот же файл у другого владельца — свой граф, а не чужой.
+	if id, err := s.GraphBySourceHash(ctx, "bob", "same-hash"); err != nil || id != "test-own-bob" {
+		t.Errorf("bob's hash lookup = %q, %v", id, err)
+	}
+	if _, err := s.GraphBySourceHash(ctx, "carol", "same-hash"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("carol's hash lookup: %v", err)
+	}
+	if err := s.DeleteGraph(ctx, "test-own-bob", "alice"); !errors.Is(err, ErrNotOwner) {
+		t.Errorf("alice deletes bob's graph: %v", err)
+	}
+	if m, _ := s.GraphMeta(ctx, "test-own-bob"); m.Owner != "bob" {
+		t.Errorf("owner = %q", m.Owner)
+	}
+	if err := s.DeleteGraph(ctx, "test-own-bob", "bob"); err != nil {
+		t.Errorf("bob deletes own graph: %v", err)
+	}
+	if st, err := s.OwnerStats(ctx, "alice"); err != nil || st.Graphs != 0 {
+		// Граф Алисы ещё строится — в сводку попадают только готовые.
+		t.Errorf("stats = %+v, %v", st, err)
+	}
+	if err := s.CompleteGraph(ctx, "test-own-alice", "Ток", "Электродинамика", 1, domain.Graph{
+		Nodes: []domain.Node{{Slug: "a", Type: domain.NodeLaw, Title: "A"}, {Slug: "b", Type: domain.NodeFormula, Title: "B"}},
+		Edges: []domain.Edge{{From: "a", To: "b", Type: domain.EdgeFormulates}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := s.OwnerStats(ctx, "alice")
+	if err != nil || st.Graphs != 1 || st.Concepts != 2 || st.Links != 1 || len(st.Sections) != 1 || st.Sections[0].Section != "Электродинамика" {
+		t.Errorf("stats = %+v, %v", st, err)
 	}
 }

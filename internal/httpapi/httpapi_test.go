@@ -26,7 +26,7 @@ var fakeGraph = domain.Graph{
 
 func (fakeStore) Ping(context.Context) error { return nil }
 
-func (fakeStore) ListGraphs(context.Context, string) ([]domain.GraphMeta, error) {
+func (fakeStore) ListGraphs(context.Context, string, string) ([]domain.GraphMeta, error) {
 	return []domain.GraphMeta{{ID: "g", Title: "Граф"}}, nil
 }
 
@@ -59,7 +59,11 @@ func (s fakeStore) Ancestors(ctx context.Context, graphID, slug string) (domain.
 	return fakeGraph, nil
 }
 
-func (fakeStore) DeleteGraph(_ context.Context, id string) error {
+func (fakeStore) OwnerStats(context.Context, string) (storage.OwnerStats, error) {
+	return storage.OwnerStats{Graphs: 1}, nil
+}
+
+func (fakeStore) DeleteGraph(_ context.Context, id, _ string) error {
 	if id == "demo" {
 		return storage.ErrDemoGraph
 	}
@@ -141,5 +145,23 @@ func TestDeleteGraph(t *testing.T) {
 	}
 	if code := del("/api/graphs/missing"); code != http.StatusNotFound {
 		t.Errorf("delete missing: %d, want 404", code)
+	}
+}
+
+func TestOwnerCookie(t *testing.T) {
+	h := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/me", nil))
+	cookies := rec.Result().Cookies()
+	if rec.Code != http.StatusOK || len(cookies) != 1 || cookies[0].Name != ownerCookie || !cookies[0].HttpOnly || !validOwnerKey(cookies[0].Value) {
+		t.Fatalf("code = %d, cookies = %+v", rec.Code, cookies)
+	}
+	// С тем же ключом браузер остаётся тем же владельцем.
+	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	req.AddCookie(cookies[0])
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if got := rec.Result().Cookies(); len(got) != 1 || got[0].Value != cookies[0].Value {
+		t.Errorf("cookie changed: %+v", got)
 	}
 }

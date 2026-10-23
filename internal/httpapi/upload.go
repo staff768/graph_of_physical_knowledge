@@ -24,7 +24,7 @@ import (
 // UploadStore — то, что загрузке нужно от хранилища.
 type UploadStore interface {
 	CreateFromUpload(ctx context.Context, meta domain.GraphMeta, sourceHash string, files []storage.File) error
-	GraphBySourceHash(ctx context.Context, hash string) (string, error)
+	GraphBySourceHash(ctx context.Context, owner, hash string) (string, error)
 }
 
 // Uploads включает загрузку конспектов. Nil — загрузка выключена (не настроена модель).
@@ -105,7 +105,7 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 
 	// Те же файлы уже обрабатывали — отдаём готовый граф, не тратя запросы к модели.
 	hash := hex.EncodeToString(hasher.Sum(nil))
-	if id, err := u.Store.GraphBySourceHash(r.Context(), hash); err == nil {
+	if id, err := u.Store.GraphBySourceHash(r.Context(), ownerFrom(r), hash); err == nil {
 		writeJSON(w, http.StatusOK, uploadResponse{ID: id, Existing: true})
 		return
 	} else if !errors.Is(err, storage.ErrNotFound) {
@@ -123,7 +123,7 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	if len(files) > 1 {
 		source = fmt.Sprintf("%s и ещё %d фото", first, len(files)-1)
 	}
-	meta := domain.GraphMeta{ID: newGraphID(), Title: titleFromFilename(first), Source: source}
+	meta := domain.GraphMeta{ID: newGraphID(), Title: titleFromFilename(first), Source: source, Owner: ownerFrom(r)}
 	if err := u.Store.CreateFromUpload(r.Context(), meta, hash, files); err != nil {
 		h.internalError(w, err)
 		return

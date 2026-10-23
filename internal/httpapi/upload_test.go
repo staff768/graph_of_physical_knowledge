@@ -34,7 +34,7 @@ func (f *fakeUploads) CreateFromUpload(_ context.Context, meta domain.GraphMeta,
 	return nil
 }
 
-func (f *fakeUploads) GraphBySourceHash(_ context.Context, hash string) (string, error) {
+func (f *fakeUploads) GraphBySourceHash(_ context.Context, _, hash string) (string, error) {
 	if id, ok := f.ids[hash]; ok {
 		return id, nil
 	}
