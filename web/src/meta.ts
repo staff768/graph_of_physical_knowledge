@@ -10,13 +10,13 @@ export const nodeTypes: Record<NodeType, { label: string; plural: string; color:
 export const nodeTypeOrder: NodeType[] = ['law', 'quantity', 'formula', 'phenomenon']
 
 // Подписи рёбер с точки зрения основания («что делает основание со следствием»).
-export const edgeTypes: Record<EdgeType, { label: string; dashed: boolean }> = {
-  formulates: { label: 'записывается как', dashed: false },
-  used_in: { label: 'входит в', dashed: true },
-  derives: { label: 'выводится в', dashed: false },
-  explains: { label: 'объясняет', dashed: false },
-  causes: { label: 'вызывает', dashed: false },
-  defines: { label: 'вводит величину', dashed: true },
+export const edgeTypes: Record<EdgeType, { label: string }> = {
+  formulates: { label: 'записывается как' },
+  used_in: { label: 'входит в' },
+  derives: { label: 'выводится в' },
+  explains: { label: 'объясняет' },
+  causes: { label: 'вызывает' },
+  defines: { label: 'вводит величину' },
 }
 
 // Явления, с которых удобно начать знакомство.

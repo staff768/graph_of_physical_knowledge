@@ -65,7 +65,7 @@ func (fakeStore) Search(context.Context, string, string, int) ([]domain.Node, er
 
 func get(t *testing.T, path string) (int, map[string]any) {
 	t.Helper()
-	h := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	h := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	var body any

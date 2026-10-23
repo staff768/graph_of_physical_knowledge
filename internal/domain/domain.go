@@ -42,6 +42,19 @@ func (t EdgeType) Valid() bool {
 	return false
 }
 
+// Origin — откуда взят узел или связь.
+type Origin string
+
+const (
+	OriginManual   Origin = ""         // граф собран вручную (демо-граф)
+	OriginExplicit Origin = "explicit" // прямо написано в конспекте
+	OriginInferred Origin = "inferred" // дополнено моделью из общих знаний
+)
+
+func (o Origin) Valid() bool {
+	return o == OriginManual || o == OriginExplicit || o == OriginInferred
+}
+
 type Node struct {
 	Slug    string   `json:"slug"`
 	Type    NodeType `json:"type"`
@@ -56,6 +69,13 @@ type Node struct {
 	Body string `json:"body,omitempty"`
 	// Example — числовой пример в Markdown с LaTeX-вставками.
 	Example string `json:"example,omitempty"`
+
+	// Поля графов, построенных по конспекту.
+	Origin      Origin `json:"origin,omitempty" yaml:"-"`
+	SourceQuote string `json:"sourceQuote,omitempty" yaml:"-"` // цитата из конспекта
+	SourcePage  int    `json:"sourcePage,omitempty" yaml:"-"`  // страница цитаты, 0 — неизвестна
+	Note        string `json:"note,omitempty" yaml:"-"`        // пояснение к дополнению моделью
+	Warning     string `json:"warning,omitempty" yaml:"-"`     // возможная ошибка в конспекте
 }
 
 type Edge struct {
@@ -63,7 +83,17 @@ type Edge struct {
 	To          string   `json:"to"`
 	Type        EdgeType `json:"type"`
 	Description string   `json:"description,omitempty"`
+	Origin      Origin   `json:"origin,omitempty" yaml:"-"`
 }
+
+// GraphStatus — состояние построения графа.
+type GraphStatus string
+
+const (
+	StatusProcessing GraphStatus = "processing"
+	StatusReady      GraphStatus = "ready"
+	StatusFailed     GraphStatus = "failed"
+)
 
 // GraphMeta — сведения о графе для библиотеки.
 type GraphMeta struct {
@@ -77,6 +107,12 @@ type GraphMeta struct {
 	EdgeCount int       `json:"edgeCount" yaml:"-"`
 	// Preview — несколько самых связанных понятий графа для превью на карточке.
 	Preview []string `json:"preview" yaml:"-"`
+
+	Status    GraphStatus `json:"status" yaml:"-"`
+	Stage     string      `json:"stage,omitempty" yaml:"-"`     // текущий этап обработки
+	StageNote string      `json:"stageNote,omitempty" yaml:"-"` // подробность этапа, например «найдено 9 понятий»
+	Error     string      `json:"error,omitempty" yaml:"-"`     // причина ошибки для пользователя
+	Pages     int         `json:"pages,omitempty" yaml:"-"`
 }
 
 // Link — связь узла с соседом, вместе с краткими данными соседа.

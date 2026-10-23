@@ -27,6 +27,10 @@ services:
 
   api:
     build: .
+    # Ключи языковой модели (необязательно: без них загрузка конспектов выключена).
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgres://physics:physics@postgres:5432/physics?sslmode=disable
       STATIC_DIR: /app/web

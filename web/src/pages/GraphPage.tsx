@@ -4,7 +4,8 @@ import { ConceptPanel, type Tab } from '../components/ConceptPanel'
 import { GraphView } from '../components/GraphView'
 import { Search } from '../components/Search'
 import { Tex } from '../components/Tex'
-import { conceptCount, graphPath, linkCount, useGraph } from '../graphs'
+import { FailedView, ProcessingView } from '../components/ProcessingView'
+import { conceptCount, graphPath, linkCount, plural, reloadGraph, useGraph } from '../graphs'
 import { Icon } from '../components/Icon'
 import { icons } from '../icons'
 import { nodeTypeOrder, nodeTypes } from '../meta'
@@ -15,8 +16,16 @@ type View = 'graph' | 'list'
 export function GraphPage({ id }: { id: string }) {
   const { query } = useLocation()
   const selected = query.get('n')
-  const { data: graph, error: graphError, notFound } = useGraph(id)
+  const [version, setVersion] = useState(0)
+  const { data: graph, error: graphError, notFound } = useGraph(id, version)
   const meta = graph?.meta
+  // Граф достроился — перечитываем его.
+  const reload = useCallback(() => {
+    reloadGraph(id)
+    setVersion((v) => v + 1)
+  }, [id])
+  // Легенда «из конспекта / дополнено» нужна только графам, построенным по конспекту.
+  const fromNotes = useMemo(() => !!graph?.nodes.some((n) => n.origin), [graph])
 
   // Данные выбранного узла; хранятся вместе со slug, чтобы не показывать устаревшие.
   const [loaded, setLoaded] = useState<{ slug: string; details: NodeDetails; chain: Explanation } | null>(null)
@@ -106,16 +115,27 @@ export function GraphPage({ id }: { id: string }) {
             <h1 className="graph-title">{meta?.title ?? 'Загрузка…'}</h1>
             {meta && (
               <div className="graph-meta">
-                {[meta.source, conceptCount(meta.nodeCount), linkCount(meta.edgeCount)].filter(Boolean).join(' · ')}
+                {[
+                  meta.source,
+                  meta.pages ? `${meta.pages} ${plural(meta.pages, 'страница', 'страницы', 'страниц')}` : '',
+                  meta.status === 'ready' ? conceptCount(meta.nodeCount) : '',
+                  meta.status === 'ready' ? linkCount(meta.edgeCount) : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </div>
             )}
           </div>
           <div className="graph-actions">
-            <button className="button" disabled title="Исходный конспект появится у графов, построенных из загрузки">
+            <button
+              className="button"
+              disabled
+              title={meta?.demo ? 'У демо-графа нет исходного конспекта' : 'Исходный файл удаляется сразу после построения графа, поэтому открыть его нельзя'}
+            >
               <Icon src={icons.fileText} size={18} />
               Источник
             </button>
-            <button className="button primary" onClick={share}>
+            <button className="button primary" onClick={share} disabled={meta?.status !== 'ready'}>
               <Icon src={icons.shareWhite} size={18} />
               {copied ? 'Ссылка скопирована' : 'Поделиться'}
             </button>
@@ -123,75 +143,94 @@ export function GraphPage({ id }: { id: string }) {
         </div>
       </header>
 
-      <div className="toolbar">
-        <div className="view-tabs" role="tablist">
-          <button role="tab" aria-selected={view === 'graph'} className={view === 'graph' ? 'active' : ''} onClick={() => setView('graph')}>
-            <Icon src={icons.networkTab} size={17} />
-            Граф знаний
-          </button>
-          <button role="tab" aria-selected={view === 'list'} className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}>
-            Список понятий
-          </button>
-        </div>
-        <Search graphId={id} onSelect={select} />
-      </div>
+      {meta?.status === 'processing' ? (
+        <ProcessingView meta={meta} onDone={reload} />
+      ) : meta?.status === 'failed' ? (
+        <FailedView meta={meta} />
+      ) : (
+        <>
+          <div className="toolbar">
+            <div className="view-tabs" role="tablist">
+              <button role="tab" aria-selected={view === 'graph'} className={view === 'graph' ? 'active' : ''} onClick={() => setView('graph')}>
+                <Icon src={icons.networkTab} size={17} />
+                Граф знаний
+              </button>
+              <button role="tab" aria-selected={view === 'list'} className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}>
+                Список понятий
+              </button>
+            </div>
+            <Search graphId={id} onSelect={select} />
+          </div>
 
-      <div className="workspace">
-        <div className="workspace-main">
-          {!graph ? (
-            <div className="placeholder">{graphError ? `Не удалось загрузить граф: ${graphError}` : 'Загрузка графа…'}</div>
-          ) : view === 'graph' ? (
-            <>
-              <GraphView
-                graph={graph}
-                selected={selected}
-                chain={chainSet}
-                chainOnly={chainOnly && !!chainSet}
-                hiddenTypes={hiddenTypes}
-                focus={focus}
-                onSelect={select}
-              />
-              <div className="legend">
-                {chainSet ? (
-                  <span className="legend-item">
-                    <Icon src={icons.legendDot} size={7} />
-                    Выбранное понятие и его связи
-                  </span>
-                ) : (
-                  <span className="legend-item muted">Нажмите на понятие, чтобы увидеть его цепочку</span>
-                )}
-                {nodeTypeOrder.map((t) => (
-                  <button key={t} className={hiddenTypes.has(t) ? 'legend-toggle off' : 'legend-toggle'} onClick={() => toggleType(t)} aria-pressed={!hiddenTypes.has(t)}>
-                    <span className="type-dot" style={{ background: nodeTypes[t].color }} />
-                    {nodeTypes[t].plural}
-                  </button>
-                ))}
-                {chainSet && (
-                  <button className="legend-toggle on" onClick={() => setChainOnly((v) => !v)}>
-                    {chainOnly ? 'Показать весь граф' : 'Только цепочка'}
-                  </button>
-                )}
-              </div>
-            </>
-          ) : (
-            <ConceptList nodes={graph.nodes} selected={selected} onSelect={select} />
-          )}
-        </div>
-        <ConceptPanel
-          nodes={nodesBySlug}
-          details={details}
-          chain={chain}
-          loading={loading}
-          error={graph ? error : null}
-          tab={tab}
-          onTab={setTab}
-          onSelect={select}
-          onFocus={(slug) => {
-            setView('graph')
-            focusNode(slug)
-          }}
-        />
-      </div>
+          <div className="workspace">
+            <div className="workspace-main">
+              {!graph ? (
+                <div className="placeholder">{graphError ? `Не удалось загрузить граф: ${graphError}` : 'Загрузка графа…'}</div>
+              ) : view === 'graph' ? (
+                <>
+                  <GraphView
+                    graph={graph}
+                    selected={selected}
+                    chain={chainSet}
+                    chainOnly={chainOnly && !!chainSet}
+                    hiddenTypes={hiddenTypes}
+                    focus={focus}
+                    onSelect={select}
+                  />
+                  <div className="legend">
+                    {chainSet ? (
+                      <span className="legend-item">
+                        <Icon src={icons.legendDot} size={7} />
+                        Выбранное понятие и его связи
+                      </span>
+                    ) : (
+                      <span className="legend-item muted">Нажмите на понятие, чтобы увидеть его цепочку</span>
+                    )}
+                    {fromNotes && (
+                      <>
+                        <span className="legend-item">
+                          <span className="legend-line" /> Из конспекта
+                        </span>
+                        <span className="legend-item">
+                          <span className="legend-line dashed" /> Дополнено ИИ
+                        </span>
+                      </>
+                    )}
+                    {nodeTypeOrder.map((t) => (
+                      <button key={t} className={hiddenTypes.has(t) ? 'legend-toggle off' : 'legend-toggle'} onClick={() => toggleType(t)} aria-pressed={!hiddenTypes.has(t)}>
+                        <span className="type-dot" style={{ background: nodeTypes[t].color }} />
+                        {nodeTypes[t].plural}
+                      </button>
+                    ))}
+                    {chainSet && (
+                      <button className="legend-toggle on" onClick={() => setChainOnly((v) => !v)}>
+                        {chainOnly ? 'Показать весь граф' : 'Только цепочка'}
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <ConceptList nodes={graph.nodes} selected={selected} onSelect={select} />
+              )}
+            </div>
+            <ConceptPanel
+              nodes={nodesBySlug}
+              source={meta?.demo ? undefined : meta?.source}
+              details={details}
+              chain={chain}
+              loading={loading}
+              error={graph ? error : null}
+              tab={tab}
+              onTab={setTab}
+              onSelect={select}
+              onFocus={(slug) => {
+                setView('graph')
+                focusNode(slug)
+              }}
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -59,7 +59,13 @@ export function useGraphs(query = ''): { graphs: GraphMeta[] | null; error: stri
 // Граф целиком загружается один раз на сессию и переиспользуется при возврате на страницу.
 const graphCache = new Map<string, Promise<GraphData>>()
 
-export function useGraph(id: string): { data: GraphData | null; error: string | null; notFound: boolean } {
+// Сбрасывает кэш графа: нужен, когда граф достроился и его надо перечитать.
+export function reloadGraph(id: string) {
+  graphCache.delete(id)
+  allGraphs = null
+}
+
+export function useGraph(id: string, version = 0): { data: GraphData | null; error: string | null; notFound: boolean } {
   const [state, setState] = useState<{ id: string; data: GraphData | null; error: string | null; notFound: boolean }>({
     id: '',
     data: null,
@@ -82,7 +88,7 @@ export function useGraph(id: string): { data: GraphData | null; error: string | 
     return () => {
       alive = false
     }
-  }, [id])
+  }, [id, version])
   return state.id === id ? state : { data: null, error: null, notFound: false }
 }
 

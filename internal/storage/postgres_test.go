@@ -199,3 +199,112 @@ func TestSearch(t *testing.T) {
 		t.Errorf("search %% matched %d nodes, want 1", len(res))
 	}
 }
+
+func TestUploadJobLifecycle(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if _, err := s.pool.Exec(ctx, `DELETE FROM graphs WHERE id LIKE 'test-job-%'`); err != nil {
+		t.Fatal(err)
+	}
+	// Другие незавершённые задания из прошлых прогонов не должны мешать.
+	if _, err := s.pool.Exec(ctx, `UPDATE graphs SET status = 'failed' WHERE status = 'processing'`); err != nil {
+		t.Fatal(err)
+	}
+	meta := domain.GraphMeta{ID: "test-job-1", Title: "lecture.pdf", Source: "lecture.pdf"}
+	up := Upload{Filename: "lecture.pdf", MIME: "application/pdf", Data: []byte("%PDF-1.4 test")}
+	if err := s.CreateFromUpload(ctx, meta, "hash-1", up); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := s.GraphBySourceHash(ctx, "hash-1"); err != nil || id != "test-job-1" {
+		t.Errorf("by hash = %q, %v", id, err)
+	}
+
+	job, err := s.ClaimJob(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.GraphID != "test-job-1" || string(job.Data) != "%PDF-1.4 test" {
+		t.Errorf("job = %+v", job)
+	}
+	// Взятое задание повторно не выдаётся.
+	if _, err := s.ClaimJob(ctx); !errors.Is(err, ErrNotFound) {
+		t.Errorf("second claim err = %v, want ErrNotFound", err)
+	}
+	if err := s.SetStage(ctx, "test-job-1", "extracting", "найдено 3 понятия"); err != nil {
+		t.Fatal(err)
+	}
+	m, err := s.GraphMeta(ctx, "test-job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Status != domain.StatusProcessing || m.Stage != "extracting" || m.StageNote != "найдено 3 понятия" {
+		t.Errorf("meta = %+v", m)
+	}
+
+	g := domain.Graph{
+		Nodes: []domain.Node{
+			{Slug: "a", Type: domain.NodeLaw, Title: "Закон", Origin: domain.OriginExplicit, SourceQuote: "цитата", SourcePage: 2},
+			{Slug: "b", Type: domain.NodeFormula, Title: "Формула", Origin: domain.OriginInferred, Note: "почему", Warning: "ошибка?"},
+		},
+		Edges: []domain.Edge{{From: "a", To: "b", Type: domain.EdgeFormulates, Origin: domain.OriginInferred}},
+	}
+	if err := s.CompleteGraph(ctx, "test-job-1", "Механика", "Механика", 8, g); err != nil {
+		t.Fatal(err)
+	}
+	m, _ = s.GraphMeta(ctx, "test-job-1")
+	if m.Status != domain.StatusReady || m.Title != "Механика" || m.Pages != 8 || m.NodeCount != 2 {
+		t.Errorf("meta after complete = %+v", m)
+	}
+	var uploads int
+	_ = s.pool.QueryRow(ctx, `SELECT count(*) FROM uploads WHERE graph_id = 'test-job-1'`).Scan(&uploads)
+	if uploads != 0 {
+		t.Error("upload should be deleted after completion")
+	}
+	saved, err := s.Graph(ctx, "test-job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Nodes[0].SourceQuote != "цитата" || saved.Nodes[0].SourcePage != 2 || saved.Nodes[1].Warning != "ошибка?" ||
+		saved.Edges[0].Origin != domain.OriginInferred {
+		t.Errorf("saved graph lost fields: %+v", saved)
+	}
+
+	// Неудачная обработка: статус failed, файл удалён, по хэшу граф больше не находится.
+	if err := s.CreateFromUpload(ctx, domain.GraphMeta{ID: "test-job-2", Title: "x"}, "hash-2", up); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FailGraph(ctx, "test-job-2", "В файле нет физики"); err != nil {
+		t.Fatal(err)
+	}
+	m, _ = s.GraphMeta(ctx, "test-job-2")
+	if m.Status != domain.StatusFailed || m.Error != "В файле нет физики" {
+		t.Errorf("failed meta = %+v", m)
+	}
+	if _, err := s.GraphBySourceHash(ctx, "hash-2"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("failed graph found by hash: %v", err)
+	}
+}
+
+func TestClaimJobWithoutUpload(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if _, err := s.pool.Exec(ctx, `UPDATE graphs SET status = 'failed' WHERE status = 'processing'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `DELETE FROM graphs WHERE id = 'test-job-orphan'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO graphs (id, title, status) VALUES ('test-job-orphan', 'x', 'processing')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ClaimJob(ctx); !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+	m, err := s.GraphMeta(ctx, "test-job-orphan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Status != domain.StatusFailed {
+		t.Errorf("status = %s, want failed", m.Status)
+	}
+}

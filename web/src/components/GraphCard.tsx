@@ -25,14 +25,22 @@ export function GraphCard({ meta, tint, favorite, onToggleFavorite, layout = 'gr
   const [menuOpen, setMenuOpen] = useState(false)
   const href = graphPath(meta.id)
   const concepts = (meta.preview ?? []).slice(0, satellites.length)
-  const stats = [conceptCount(meta.nodeCount), linkCount(meta.edgeCount), meta.demo ? 'демо' : formatDate(meta.createdAt)]
+  const when = meta.demo ? 'демо' : formatDate(meta.createdAt)
+  const stats =
+    meta.status === 'processing'
+      ? ['ИИ строит граф…', when]
+      : meta.status === 'failed'
+        ? ['не удалось построить', when]
+        : [conceptCount(meta.nodeCount), linkCount(meta.edgeCount), when]
 
   return (
     <article className={`graph-card ${layout}`}>
       <a className={`graph-card-preview ${tint}`} href={href} onClick={linkClick(href)} aria-label={`Открыть граф «${meta.title}»`}>
         <div className="preview-scheme">
           <img className="preview-links" src={icons.previewConnections} width={230} height={107} alt="" aria-hidden />
-          <span className="preview-center"><span>{meta.section}</span></span>
+          <span className={meta.status === 'ready' ? 'preview-center' : 'preview-center pending'}>
+            <span>{meta.status === 'ready' ? meta.section || 'Физика' : meta.status === 'processing' ? 'Строится…' : 'Ошибка'}</span>
+          </span>
           {concepts.map((title, i) => (
             <span key={title} className="preview-concept" style={satellites[i]}>
               <span>{title}</span>
@@ -42,7 +50,13 @@ export function GraphCard({ meta, tint, favorite, onToggleFavorite, layout = 'gr
       </a>
       <div className="graph-card-info">
         <div className="graph-card-row">
-          <span className="tag">{meta.section}</span>
+          {meta.status === 'processing' ? (
+            <span className="tag accent">Строится</span>
+          ) : meta.status === 'failed' ? (
+            <span className="tag danger">Не удалось</span>
+          ) : (
+            <span className="tag">{meta.section || 'Физика'}</span>
+          )}
           {favorite ? (
             <button className="icon-button" onClick={onToggleFavorite} aria-label="Убрать из избранного" title="Убрать из избранного">
               <Icon src={icons.starAccent} size={17} />

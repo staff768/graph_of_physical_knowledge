@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react'
 import { GraphCard } from '../components/GraphCard'
-import { DEMO_GRAPH_ID, graphPath, useFavorites, useGraphs } from '../graphs'
+import { api } from '../api'
+import { graphPath, invalidateGraphs, useFavorites, useGraphs } from '../graphs'
 import { Icon } from '../components/Icon'
 import { icons } from '../icons'
-import { linkClick } from '../router'
+import { linkClick, navigate } from '../router'
 
 const ACCEPT = '.pdf,.docx,.txt,.jpg,.jpeg,.png'
 const MAX_SIZE = 25 * 1024 * 1024
@@ -98,18 +99,29 @@ export function HomePage() {
 function UploadZone() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
-  const [notice, setNotice] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
+  const [uploading, setUploading] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  // Построение графа по конспекту — этап 2 плана. Пока файл никуда не отправляется.
-  const accept = (file: File | undefined) => {
-    if (!file) return
+  const accept = async (file: File | undefined) => {
+    if (!file || uploading) return
     const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
     if (!ACCEPT.split(',').includes(`.${ext}`)) {
-      setNotice({ kind: 'error', text: 'Этот формат не поддерживается. Подойдут PDF, DOCX, TXT, JPG и PNG.' })
-    } else if (file.size > MAX_SIZE) {
-      setNotice({ kind: 'error', text: 'Файл больше 25 МБ.' })
-    } else {
-      setNotice({ kind: 'info', text: `«${file.name}» выбран. Построение графа по конспекту пока в разработке — а демо-граф уже можно исследовать.` })
+      setError('Этот формат не поддерживается. Подойдут PDF, DOCX, TXT, JPG и PNG.')
+      return
+    }
+    if (file.size > MAX_SIZE) {
+      setError('Файл больше 25 МБ.')
+      return
+    }
+    setError(null)
+    setUploading(file.name)
+    try {
+      const { id } = await api.upload(file)
+      invalidateGraphs()
+      navigate(graphPath(id))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось загрузить файл.')
+      setUploading(null)
     }
   }
 
@@ -124,17 +136,18 @@ function UploadZone() {
       onDrop={(e) => {
         e.preventDefault()
         setDragging(false)
-        accept(e.dataTransfer.files[0])
+        void accept(e.dataTransfer.files[0])
       }}
+      aria-busy={!!uploading}
     >
       <div className="upload-symbol">
         <Icon src={icons.fileUp} size={26} />
       </div>
       <div className="upload-hint">
-        <div className="upload-title">Здесь ваш следующий граф</div>
-        <div className="upload-sub">Перетащите конспект сюда или выберите файл</div>
+        <div className="upload-title">{uploading ? 'Загружаем конспект…' : 'Здесь ваш следующий граф'}</div>
+        <div className="upload-sub">{uploading ?? 'Перетащите конспект сюда или выберите файл'}</div>
       </div>
-      <button className="button primary" onClick={() => inputRef.current?.click()}>
+      <button className="button primary" onClick={() => inputRef.current?.click()} disabled={!!uploading}>
         <Icon src={icons.plusWhite} size={18} />
         Выбрать конспект
       </button>
@@ -144,23 +157,20 @@ function UploadZone() {
         accept={ACCEPT}
         hidden
         onChange={(e) => {
-          accept(e.target.files?.[0])
+          void accept(e.target.files?.[0])
           e.target.value = ''
         }}
       />
-      {notice ? (
-        <p className={`upload-notice ${notice.kind}`} role="status">
-          {notice.text}{' '}
-          {notice.kind === 'info' && (
-            <a href={graphPath(DEMO_GRAPH_ID)} onClick={linkClick(graphPath(DEMO_GRAPH_ID))}>Открыть демо-граф</a>
-          )}
+      {error ? (
+        <p className="upload-notice error" role="alert">
+          {error}
         </p>
       ) : (
         <div className="upload-formats">PDF, DOCX, TXT, JPG и PNG · до 25 МБ</div>
       )}
       <div className="upload-privacy">
         <Icon src={icons.lockSmall} size={12} />
-        Ваши материалы видны только вам
+        Файл удаляется сразу после построения графа
       </div>
     </div>
   )

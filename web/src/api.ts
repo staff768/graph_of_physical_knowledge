@@ -2,6 +2,9 @@ export type NodeType = 'law' | 'quantity' | 'formula' | 'phenomenon'
 
 export type EdgeType = 'formulates' | 'used_in' | 'derives' | 'explains' | 'causes' | 'defines'
 
+// '' (нет поля) — граф собран вручную, explicit — из конспекта, inferred — дополнено моделью.
+export type Origin = 'explicit' | 'inferred'
+
 export interface GraphNode {
   slug: string
   type: NodeType
@@ -12,6 +15,11 @@ export interface GraphNode {
   unit?: string
   body?: string
   example?: string
+  origin?: Origin
+  sourceQuote?: string
+  sourcePage?: number
+  note?: string
+  warning?: string
 }
 
 export interface GraphEdge {
@@ -19,6 +27,7 @@ export interface GraphEdge {
   to: string
   type: EdgeType
   description?: string
+  origin?: Origin
 }
 
 export interface Graph {
@@ -75,6 +84,11 @@ export interface GraphMeta {
   edgeCount: number
   // Самые связанные понятия — для превью карточки (только в списке графов).
   preview?: string[]
+  status: 'processing' | 'ready' | 'failed'
+  stage?: 'reading' | 'extracting' | 'linking' | 'checking'
+  stageNote?: string
+  error?: string
+  pages?: number
 }
 
 export interface GraphData extends Graph {
@@ -108,4 +122,12 @@ export const api = {
   chain: (id: string, slug: string, signal?: AbortSignal) =>
     get<Explanation>(`${graphBase(id)}/nodes/${enc(slug)}/chain`, signal),
   search: (id: string, q: string, signal?: AbortSignal) => get<GraphNode[]>(`${graphBase(id)}/search?q=${enc(q)}`, signal),
+  upload: async (file: File): Promise<{ id: string; existing?: boolean }> => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch('/api/graphs', { method: 'POST', body: form })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) throw new ApiError(res.status, body.error ?? `HTTP ${res.status}`)
+    return body
+  },
 }

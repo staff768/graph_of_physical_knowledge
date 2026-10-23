@@ -8,6 +8,8 @@ export type Tab = 'concept' | 'chain'
 
 interface Props {
   nodes: Map<string, GraphNode>
+  // Имя исходного файла — для подписи под цитатой.
+  source?: string
   details: NodeDetails | null
   chain: Explanation | null
   loading: boolean
@@ -45,6 +47,15 @@ export function ConceptPanel(props: Props) {
         <p className="concept-summary">{n.summary}</p>
       </div>
 
+      {n.warning && (
+        <div className="warning-box" role="note">
+          <span className="warning-mark" aria-hidden>
+            !
+          </span>
+          <p>{n.warning}</p>
+        </div>
+      )}
+
       {n.formula && <FormulaBlock node={n} incoming={details.incoming} nodes={nodes} />}
 
       <nav className="panel-tabs" role="tablist">
@@ -57,7 +68,7 @@ export function ConceptPanel(props: Props) {
       </nav>
 
       {tab === 'concept' ? (
-        <ConceptTab details={details} onSelect={onSelect} />
+        <ConceptTab details={details} source={props.source} onSelect={onSelect} />
       ) : props.chain ? (
         <ChainTab {...props} chain={props.chain} />
       ) : (
@@ -120,10 +131,34 @@ function FormulaBlock({ node, incoming, nodes }: { node: GraphNode; incoming: Li
   )
 }
 
-function ConceptTab({ details, onSelect }: { details: NodeDetails; onSelect: (s: string) => void }) {
+function ConceptTab({ details, source, onSelect }: { details: NodeDetails; source?: string; onSelect: (s: string) => void }) {
   const n = details.node
   return (
     <>
+      {n.origin === 'explicit' && n.sourceQuote && (
+        <section className="panel-section">
+          <div className="source-head">
+            <span className="caption">В ВАШЕМ КОНСПЕКТЕ</span>
+            {n.sourcePage ? <span className="source-page">стр. {n.sourcePage}</span> : null}
+          </div>
+          <blockquote className="source-quote">«{n.sourceQuote}»</blockquote>
+          {source && (
+            <div className="source-file">
+              <Icon src={icons.fileTextSmall} size={14} />
+              {source}
+            </div>
+          )}
+        </section>
+      )}
+      {n.origin === 'inferred' && (
+        <section className="inferred-box">
+          <div className="source-head">
+            <span className="caption">ДОПОЛНЕНО ИИ</span>
+            <Icon src={icons.sparkles} size={16} />
+          </div>
+          <p>{n.note || 'В конспекте этого нет: понятие добавлено, чтобы граф был связным.'}</p>
+        </section>
+      )}
       {n.body && (
         <section className="panel-section">
           <div className="caption">ПОДРОБНЕЕ</div>

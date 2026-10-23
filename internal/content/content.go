@@ -137,20 +137,21 @@ func Validate(g domain.Graph) error {
 			errs = append(errs, fmt.Errorf("%s: duplicate", name))
 		}
 		seen[key] = true
-		if !edgeAllowed(e.Type, fromType, toType) {
+		if !EdgeAllowed(e.Type, fromType, toType) {
 			errs = append(errs, fmt.Errorf("%s: not allowed between %s and %s", name, fromType, toType))
 		}
 	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-	if cycle := findCycle(g); cycle != nil {
+	if cycle := FindCycle(g); cycle != nil {
 		return fmt.Errorf("graph has a cycle: %s", strings.Join(cycle, " -> "))
 	}
 	return nil
 }
 
-func edgeAllowed(t domain.EdgeType, from, to domain.NodeType) bool {
+// EdgeAllowed сообщает, допустима ли связь типа t между узлами этих типов.
+func EdgeAllowed(t domain.EdgeType, from, to domain.NodeType) bool {
 	for _, pair := range allowedEdges[t] {
 		if pair[0] == from && pair[1] == to {
 			return true
@@ -159,8 +160,9 @@ func edgeAllowed(t domain.EdgeType, from, to domain.NodeType) bool {
 	return false
 }
 
-// findCycle возвращает один найденный цикл или nil, если граф ацикличен.
-func findCycle(g domain.Graph) []string {
+// FindCycle возвращает один найденный цикл (slug узлов, первый повторён в конце)
+// или nil, если граф ацикличен.
+func FindCycle(g domain.Graph) []string {
 	out := make(map[string][]string)
 	for _, e := range g.Edges {
 		out[e.From] = append(out[e.From], e.To)

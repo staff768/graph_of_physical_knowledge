@@ -32,27 +32,36 @@ type Store interface {
 }
 
 type handler struct {
-	store Store
-	log   *slog.Logger
+	store   Store
+	log     *slog.Logger
+	uploads *Uploads
 }
 
 // New собирает роутер. Если static не nil, он раздаётся как SPA:
-// неизвестные пути вне /api отдают index.html.
-func New(store Store, log *slog.Logger, static fs.FS) http.Handler {
-	h := &handler{store: store, log: log}
+// неизвестные пути вне /api отдают index.html. uploads == nil выключает загрузку конспектов.
+func New(store Store, log *slog.Logger, static fs.FS, uploads *Uploads) http.Handler {
+	if uploads != nil {
+		uploads.limiter = newLimiter(uploads.PerHour, time.Hour)
+	}
+	h := &handler{store: store, log: log, uploads: uploads}
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer, middleware.Timeout(15*time.Second))
+	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
 	r.Use(h.logRequests)
 
 	r.Route("/api", func(r chi.Router) {
-		r.Get("/health", h.health)
-		r.Get("/graphs", h.listGraphs)
-		r.Route("/graphs/{graphID}", func(r chi.Router) {
-			r.Use(h.requireGraph)
-			r.Get("/", h.graph)
-			r.Get("/search", h.search)
-			r.Get("/nodes/{slug}", h.node)
-			r.Get("/nodes/{slug}/chain", h.chain)
+		// Загрузка файла до 25 МБ может идти дольше обычного запроса.
+		r.With(middleware.Timeout(2*time.Minute)).Post("/graphs", h.upload)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.Timeout(15 * time.Second))
+			r.Get("/health", h.health)
+			r.Get("/graphs", h.listGraphs)
+			r.Route("/graphs/{graphID}", func(r chi.Router) {
+				r.Use(h.requireGraph)
+				r.Get("/", h.graph)
+				r.Get("/search", h.search)
+				r.Get("/nodes/{slug}", h.node)
+				r.Get("/nodes/{slug}/chain", h.chain)
+			})
 		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not found")

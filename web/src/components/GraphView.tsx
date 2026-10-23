@@ -49,7 +49,8 @@ function buildStyle(): cytoscape.StylesheetJson {
         'curve-style': 'bezier',
       },
     },
-    { selector: 'edge[?dashed]', style: { 'line-style': 'dashed', 'line-dash-pattern': [5, 4] } },
+    // Пунктир — связь дополнена моделью, в конспекте её нет.
+    { selector: 'edge[?inferred]', style: { 'line-style': 'dashed', 'line-dash-pattern': [5, 4] } },
     { selector: '.faded', style: { opacity: 0.15 } },
     {
       selector: 'edge.in-chain',
@@ -81,8 +82,8 @@ function toElements(graph: Graph, only: Set<string> | null): ElementDefinition[]
         id: `${e.from}->${e.to}:${e.type}`,
         source: e.from,
         target: e.to,
-        label: edgeTypes[e.type].label,
-        dashed: edgeTypes[e.type].dashed,
+        label: edgeTypes[e.type].label + (e.origin === 'inferred' ? ' · дополнено' : ''),
+        inferred: e.origin === 'inferred',
       },
     }))
   return [...nodes, ...edges]
@@ -108,9 +109,10 @@ function subtitleHTML(n: GraphNode): string {
 
 function createCard(n: GraphNode): HTMLDivElement {
   const el = document.createElement('div')
-  el.className = 'gcard'
+  el.className = n.origin === 'inferred' ? 'gcard inferred' : 'gcard'
   el.style.setProperty('--type-color', nodeTypes[n.type].color)
-  el.innerHTML = `<span class="gcard-dot"></span><div class="gcard-title"></div><div class="gcard-sub">${subtitleHTML(n)}</div>`
+  const warning = n.warning ? '<span class="gcard-warning" title="Возможна ошибка в конспекте">!</span>' : ''
+  el.innerHTML = `${warning}<span class="gcard-dot"></span><div class="gcard-title"></div><div class="gcard-sub">${subtitleHTML(n)}</div>`
   el.querySelector('.gcard-title')!.textContent = n.title
   return el
 }
@@ -218,7 +220,12 @@ export function GraphView({ graph, selected, chain, chainOnly, hiddenTypes, focu
     // Без анимации: анимации Cytoscape встают в очередь, и вид «доезжал» бы до цели с задержкой.
     const target = chain ? cy.nodes('.in-chain') : cy.nodes(':visible')
     cy.stop(true, false)
-    if (target.nonempty()) cy.fit(target, 48)
+    if (target.nonempty()) {
+      cy.fit(target, 48)
+      // Маленькую цепочку не раздуваем: крупнее 100% карточки выглядят неестественно.
+      if (cy.zoom() > 1) cy.zoom({ level: 1, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } })
+      if (cy.zoom() === 1) cy.center(target)
+    }
   }, [chain, selected, hiddenTypes, graph, only])
 
   // Центрирование на узле по запросу из панели разбора.

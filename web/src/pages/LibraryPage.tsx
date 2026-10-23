@@ -48,10 +48,11 @@ export function LibraryPage() {
   return (
     <div className="page">
       <div className="page-context">
-        <span>Личное пространство</span>
+        <span>Библиотека графов</span>
+        {/* Владельцев у графов пока нет — личная библиотека появится вместе с историей (этап 3). */}
         <span className="context-link">
           <Icon src={icons.lock} size={14} />
-          Видно только вам
+          Граф открывается по ссылке
         </span>
       </div>
 
