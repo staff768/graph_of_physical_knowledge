@@ -1,10 +1,11 @@
 import { useEffect } from 'react'
+import { EmptyState } from './components/EmptyState'
 import { Nav } from './components/Nav'
 import { DEMO_GRAPH_ID, graphPath } from './graphs'
 import { GraphPage } from './pages/GraphPage'
 import { HomePage } from './pages/HomePage'
 import { LibraryPage } from './pages/LibraryPage'
-import { navigate, useLocation } from './router'
+import { linkClick, navigate, useLocation } from './router'
 
 export default function App() {
   const { path } = useLocation()
@@ -25,7 +26,16 @@ export default function App() {
   else
     page = (
       <div className="page">
-        <h1 className="page-title">Страница не найдена</h1>
+        <EmptyState
+          title="Такой страницы нет"
+          action={
+            <a className="button primary" href="/" onClick={linkClick('/')}>
+              На главную
+            </a>
+          }
+        >
+          Проверьте адрес или начните с главной.
+        </EmptyState>
       </div>
     )
 

@@ -53,7 +53,7 @@ export function Search({ graphId, onSelect }: { graphId: string; onSelect: (slug
 
   return (
     <div className="graph-search">
-      <Icon src={icons.searchSmall} size={16} />
+      <Icon src={icons.searchSmall} size={16} className="muted" />
       <input
         ref={inputRef}
         type="search"

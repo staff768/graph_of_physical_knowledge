@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { EmptyState } from '../components/EmptyState'
 import { api, type Explanation, type GraphNode, type NodeDetails, type NodeType } from '../api'
 import { ConceptPanel, type Tab } from '../components/ConceptPanel'
 import { GraphView } from '../components/GraphView'
 import { Search } from '../components/Search'
 import { Tex } from '../components/Tex'
 import { FailedView, ProcessingView } from '../components/ProcessingView'
+import { useMediaQuery } from '../hooks'
 import { conceptCount, graphPath, linkCount, plural, reloadGraph, useGraph } from '../graphs'
 import { Icon } from '../components/Icon'
 import { icons } from '../icons'
@@ -37,6 +39,9 @@ export function GraphPage({ id }: { id: string }) {
   const [hiddenTypes, setHiddenTypes] = useState<Set<NodeType>>(new Set())
   const [focus, setFocus] = useState<{ slug: string; seq: number } | null>(null)
   const [copied, setCopied] = useState(false)
+  // На телефоне карточка понятия — нижняя шторка поверх графа.
+  const isPhone = useMediaQuery('(max-width: 680px)')
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   const select = useCallback((slug: string | null) => navigate(graphPath(id, slug), { replace: true }), [id])
 
@@ -86,10 +91,16 @@ export function GraphPage({ id }: { id: string }) {
   if (notFound) {
     return (
       <div className="page">
-        <h1 className="page-title">Граф не найден</h1>
-        <p className="page-lead">
-          Возможно, ссылка устарела. <a href="/graphs" onClick={linkClick('/graphs')}>Перейти к моим графам</a>
-        </p>
+        <EmptyState
+          title="Граф не найден"
+          action={
+            <a className="button primary" href="/graphs" onClick={linkClick('/graphs')}>
+              Перейти к моим графам
+            </a>
+          }
+        >
+          Возможно, ссылка устарела или граф удалили. Все графы — в библиотеке.
+        </EmptyState>
       </div>
     )
   }
@@ -100,7 +111,7 @@ export function GraphPage({ id }: { id: string }) {
         <div className="graph-head-row">
           <nav className="breadcrumbs" aria-label="Путь">
             <a href="/graphs" onClick={linkClick('/graphs')}>Мои графы</a>
-            <Icon src={icons.chevronRight} size={14} />
+            <Icon src={icons.chevronRight} size={14} className="muted" />
             <span>{meta?.title ?? '…'}</span>
           </nav>
           {meta?.demo && (
@@ -180,7 +191,7 @@ export function GraphPage({ id }: { id: string }) {
                   <div className="legend">
                     {chainSet ? (
                       <span className="legend-item">
-                        <Icon src={icons.legendDot} size={7} />
+                        <Icon src={icons.legendDot} size={7} className="accent" />
                         Выбранное понятие и его связи
                       </span>
                     ) : (
@@ -223,8 +234,10 @@ export function GraphPage({ id }: { id: string }) {
               tab={tab}
               onTab={setTab}
               onSelect={select}
+              sheet={isPhone ? { expanded: sheetOpen, onToggle: () => setSheetOpen((o) => !o) } : undefined}
               onFocus={(slug) => {
                 setView('graph')
+                setSheetOpen(false)
                 focusNode(slug)
               }}
             />

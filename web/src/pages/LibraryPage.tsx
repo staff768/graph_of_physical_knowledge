@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { EmptyState } from '../components/EmptyState'
 import { GraphCard } from '../components/GraphCard'
 import { graphCount, plural, useFavorites, useGraphs } from '../graphs'
 import { Icon } from '../components/Icon'
@@ -80,7 +81,7 @@ export function LibraryPage() {
       <div className="library-tools">
         <div className="tools-row">
           <label className="search-field">
-            <Icon src={icons.search} size={17} />
+            <Icon src={icons.search} size={17} className="muted" />
             <input type="search" placeholder="Поиск по названию или понятию" value={search} onChange={(e) => setSearch(e.target.value)} />
           </label>
           <button className="button" onClick={() => setNewestFirst((v) => !v)}>
@@ -106,11 +107,31 @@ export function LibraryPage() {
       </div>
 
       {error ? (
-        <div className="empty">Не удалось загрузить графы: {error}</div>
+        <EmptyState
+          tone="danger"
+          title="Библиотека не загрузилась"
+          action={
+            <button className="button" onClick={() => window.location.reload()}>
+              Обновить страницу
+            </button>
+          }
+        >
+          Сервер не ответил: {error}. Проверьте, что приложение запущено, и обновите страницу.
+        </EmptyState>
       ) : !all ? (
-        <div className="empty">Загрузка…</div>
+        <div className="loading-line" aria-label="Загрузка" />
       ) : graphList.length === 0 ? (
-        <div className="empty">Здесь появятся ваши графы. Загрузите первый конспект — и мы превратим его в карту знаний.</div>
+        <EmptyState
+          title="Здесь появятся ваши графы"
+          action={
+            <button className="button primary" onClick={() => navigate('/')}>
+              <Icon src={icons.plusWhite} size={18} />
+              Загрузить конспект
+            </button>
+          }
+        >
+          Загрузите конспект по физике — понятия, формулы и связи между ними появятся здесь.
+        </EmptyState>
       ) : visible.length > 0 ? (
         <div className={layout === 'grid' ? 'card-grid' : 'card-list'}>
           {visible.map((meta, i) => (
@@ -125,11 +146,29 @@ export function LibraryPage() {
           ))}
         </div>
       ) : (
-        <div className="empty">
-          {filter === 'favorites' && !debounced
-            ? 'В избранном пока пусто — отметьте граф через меню «…» на карточке.'
-            : `Ничего не нашлось${debounced ? ` по запросу «${debounced}»` : ''}.`}
-        </div>
+        filter === 'favorites' && !debounced ? (
+          <EmptyState compact title="В избранном пока пусто">
+            Откройте меню «…» на карточке графа и выберите «В избранное».
+          </EmptyState>
+        ) : (
+          <EmptyState
+            compact
+            title={debounced ? `Ничего не нашлось по запросу «${debounced}»` : 'В этом разделе графов нет'}
+            action={
+              <button
+                className="button"
+                onClick={() => {
+                  setSearch('')
+                  setFilter('all')
+                }}
+              >
+                Показать все графы
+              </button>
+            }
+          >
+            {debounced ? 'Ищем по названиям графов и понятиям внутри них. Попробуйте другое слово.' : null}
+          </EmptyState>
+        )
       )}
 
       <div className="library-foot">

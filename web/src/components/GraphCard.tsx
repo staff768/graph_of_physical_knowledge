@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { GraphMeta } from '../api'
 import { conceptCount, graphPath, linkCount } from '../graphs'
-import { Icon } from './Icon'
+import { Icon, Mask } from './Icon'
 import { icons } from '../icons'
 import { linkClick } from '../router'
 
@@ -37,7 +37,7 @@ export function GraphCard({ meta, tint, favorite, onToggleFavorite, layout = 'gr
     <article className={`graph-card ${layout}`}>
       <a className={`graph-card-preview ${tint}`} href={href} onClick={linkClick(href)} aria-label={`Открыть граф «${meta.title}»`}>
         <div className="preview-scheme">
-          <img className="preview-links" src={icons.previewConnections} width={230} height={107} alt="" aria-hidden />
+          <Mask className="preview-links" src={icons.previewConnections} width={230} height={107} />
           <span className={meta.status === 'ready' ? 'preview-center' : 'preview-center pending'}>
             <span>{meta.status === 'ready' ? meta.section || 'Физика' : meta.status === 'processing' ? 'Строится…' : 'Ошибка'}</span>
           </span>
@@ -59,12 +59,12 @@ export function GraphCard({ meta, tint, favorite, onToggleFavorite, layout = 'gr
           )}
           {favorite ? (
             <button className="icon-button" onClick={onToggleFavorite} aria-label="Убрать из избранного" title="Убрать из избранного">
-              <Icon src={icons.starAccent} size={17} />
+              <Icon src={icons.starAccent} size={17} className="accent" />
             </button>
           ) : (
             <div className="menu-anchor">
               <button className="icon-button" onClick={() => setMenuOpen((o) => !o)} onBlur={() => setTimeout(() => setMenuOpen(false), 150)} aria-label="Действия" aria-expanded={menuOpen}>
-                <Icon src={icons.ellipsis} size={17} />
+                <Icon src={icons.ellipsis} size={17} className="muted" />
               </button>
               {menuOpen && (
                 <div className="menu" role="menu">

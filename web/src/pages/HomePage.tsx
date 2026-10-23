@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react'
+import { EmptyState } from '../components/EmptyState'
 import { GraphCard } from '../components/GraphCard'
 import { api } from '../api'
 import { graphPath, invalidateGraphs, useFavorites, useGraphs } from '../graphs'
-import { Icon } from '../components/Icon'
+import { Icon, Mask } from '../components/Icon'
 import { icons } from '../icons'
 import { linkClick, navigate } from '../router'
 
@@ -43,7 +44,7 @@ export function HomePage() {
             <Icon src={icons.moveUpRight} size={17} />
           </div>
           <div className="explainer-scheme" aria-hidden>
-            <img className="explainer-links" src={icons.exampleConnections} width={256} height={67} alt="" />
+            <Mask className="explainer-links" src={icons.exampleConnections} width={256} height={67} />
             <span className="explainer-concept" style={{ left: 1, top: 18 }}>Сила</span>
             <span className="explainer-concept" style={{ left: 238, top: 18 }}>Ускорение</span>
             <span className="explainer-label">связывает</span>
@@ -75,12 +76,16 @@ export function HomePage() {
           </a>
         </div>
         {error ? (
-          <div className="empty">Не удалось загрузить графы: {error}</div>
+          <EmptyState compact tone="danger" title="Графы не загрузились">
+            Сервер не ответил: {error}. Обновите страницу.
+          </EmptyState>
         ) : graphs && graphs.length === 0 ? (
-          <div className="empty">Здесь появятся ваши графы. Загрузите первый конспект.</div>
+          <EmptyState compact title="Здесь появятся ваши графы">
+            Загрузите первый конспект — и граф появится в этом списке.
+          </EmptyState>
         ) : (
           <div className="card-grid">
-            {(graphs ?? []).slice(0, 3).map((meta, i) => (
+            {(graphs ?? []).filter((g) => g.status === 'ready').slice(0, 3).map((meta, i) => (
               <GraphCard
                 key={meta.id}
                 meta={meta}
@@ -141,7 +146,7 @@ function UploadZone() {
       aria-busy={!!uploading}
     >
       <div className="upload-symbol">
-        <Icon src={icons.fileUp} size={26} />
+        <Icon src={icons.fileUp} size={26} className="accent" />
       </div>
       <div className="upload-hint">
         <div className="upload-title">{uploading ? 'Загружаем конспект…' : 'Здесь ваш следующий граф'}</div>

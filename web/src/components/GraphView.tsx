@@ -6,6 +6,7 @@ import type { Graph, GraphNode, NodeType } from '../api'
 import { Icon } from './Icon'
 import { icons } from '../icons'
 import { edgeTypes, nodeTypes } from '../meta'
+import { onThemeChange } from '../theme'
 
 cytoscape.use(dagre)
 
@@ -164,7 +165,10 @@ export function GraphView({ graph, selected, chain, chainOnly, hiddenTypes, focu
       if (!frame) frame = requestAnimationFrame(sync)
     })
     cyRef.current = cy
+    // Цвета рёбер берутся из CSS-переменных — при смене темы стили пересчитываются.
+    const offTheme = onThemeChange(() => cy.style(buildStyle()))
     return () => {
+      offTheme()
       cancelAnimationFrame(frame)
       cy.destroy()
       cyRef.current = null

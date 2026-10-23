@@ -4,3 +4,5 @@ web/dist
 /api
 /seed
 .env
+.claude
+CLAUDE.md

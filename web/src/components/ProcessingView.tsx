@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { api, type GraphMeta } from '../api'
 import { icons } from '../icons'
 import { linkClick } from '../router'
+import { nodeTypes } from '../meta'
+import { EmptyState } from './EmptyState'
 import { Icon } from './Icon'
 
 const stages: { id: NonNullable<GraphMeta['stage']>; title: string }[] = [
@@ -59,11 +61,7 @@ export function ProcessingView({ meta, onDone }: { meta: GraphMeta; onDone: () =
           })}
         </ol>
       </div>
-      <div className="processing-preview" aria-hidden>
-        {[0, 1, 2, 3, 4].map((i) => (
-          <span key={i} className={i <= active + 1 ? 'skeleton-card shown' : 'skeleton-card'} />
-        ))}
-      </div>
+      <GrowingGraph stage={active} />
       <p className="processing-leave">
         <Icon src={icons.cloudCheck} size={14} />
         Можно закрыть страницу — граф появится в «Моих графах».
@@ -72,21 +70,87 @@ export function ProcessingView({ meta, onDone }: { meta: GraphMeta; onDone: () =
   )
 }
 
+// Мини-граф, который собирается по этапам: понятия → связи → проверка формулы.
+// Колонки повторяют раскладку настоящего графа: законы и величины → формулы → явление.
+const sketchNodes = [
+  { x: 0, y: 24, kind: 'law' },
+  { x: 0, y: 214, kind: 'quantity' },
+  { x: 160, y: 24, kind: 'formula' },
+  { x: 160, y: 119, kind: 'formula' },
+  { x: 160, y: 214, kind: 'formula' },
+  { x: 320, y: 119, kind: 'phenomenon' },
+] as const
+const sketchEdges = [
+  [0, 2], [0, 3], [1, 4], [1, 3], [2, 5], [3, 5], [4, 5],
+] as const
+const NODE_W = 120
+const NODE_H = 46
+
+function GrowingGraph({ stage }: { stage: number }) {
+  // reading — пусто; extracting — понятия; linking — связи; checking — формула проверяется.
+  const nodesShown = stage === 0 ? 0 : stage === 1 ? 5 : sketchNodes.length
+  const edgesShown = stage >= 2
+  return (
+    <div className="growing" aria-hidden>
+      <svg className="growing-edges" viewBox={`0 0 ${320 + NODE_W} ${214 + NODE_H + 24}`}>
+        {sketchEdges.map(([a, b]) => {
+          const from = sketchNodes[a]
+          const to = sketchNodes[b]
+          const x1 = from.x + NODE_W
+          const y1 = from.y + NODE_H / 2
+          const x2 = to.x
+          const y2 = to.y + NODE_H / 2
+          const mid = (x1 + x2) / 2
+          return (
+            <path
+              key={`${a}-${b}`}
+              className={edgesShown ? 'growing-edge shown' : 'growing-edge'}
+              d={`M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`}
+              pathLength={1}
+            />
+          )
+        })}
+      </svg>
+      {sketchNodes.map((n, i) => (
+        <span
+          key={i}
+          className={[
+            'growing-node',
+            i < nodesShown ? 'shown' : '',
+            stage === 3 && i === 3 ? 'checking' : '',
+          ].join(' ')}
+          style={{ left: n.x, top: n.y, transitionDelay: i < nodesShown ? `${i * 90}ms` : '0ms' }}
+        >
+          <i style={{ background: nodeTypes[n.kind].color }} />
+          <b />
+          <b className="short" />
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export function FailedView({ meta }: { meta: GraphMeta }) {
   return (
     <div className="processing">
-      <div className="processing-card failed">
-        <h2 className="concept-title">Не удалось построить граф</h2>
-        <p className="concept-summary">{meta.error || 'Что-то пошло не так. Попробуйте загрузить конспект ещё раз.'}</p>
-        <div className="graph-actions">
-          <a className="button primary" href="/" onClick={linkClick('/')}>
-            <Icon src={icons.plusWhite} size={18} />
-            Загрузить другой файл
-          </a>
-          <a className="button" href="/graphs" onClick={linkClick('/graphs')}>
-            Мои графы
-          </a>
-        </div>
+      <div className="processing-failed">
+        <EmptyState
+          tone="danger"
+          title="Граф не построился"
+          action={
+            <>
+              <a className="button primary" href="/" onClick={linkClick('/')}>
+                <Icon src={icons.plusWhite} size={18} />
+                Загрузить другой файл
+              </a>
+              <a className="button" href="/graphs" onClick={linkClick('/graphs')}>
+                Мои графы
+              </a>
+            </>
+          }
+        >
+          {meta.error || 'Попробуйте загрузить конспект ещё раз.'}
+        </EmptyState>
       </div>
     </div>
   )

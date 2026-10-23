@@ -18,27 +18,41 @@ interface Props {
   onTab: (t: Tab) => void
   onSelect: (slug: string | null) => void
   onFocus: (slug: string) => void
+  // На телефоне карточка — нижняя шторка: свёрнута или развёрнута.
+  sheet?: { expanded: boolean; onToggle: () => void }
+}
+
+function Shell({ sheet, children }: { sheet?: Props['sheet']; children: React.ReactNode }) {
+  if (!sheet) return <aside className="concept-panel">{children}</aside>
+  return (
+    <aside className={sheet.expanded ? 'concept-panel sheet expanded' : 'concept-panel sheet'}>
+      <button className="sheet-handle" onClick={sheet.onToggle} aria-label={sheet.expanded ? 'Свернуть карточку' : 'Развернуть карточку'} aria-expanded={sheet.expanded}>
+        <span />
+      </button>
+      {children}
+    </aside>
+  )
 }
 
 export function ConceptPanel(props: Props) {
-  const { details, loading, error, tab, onTab, onSelect, nodes } = props
+  const { details, loading, error, tab, onTab, onSelect, nodes, sheet } = props
   if (error) {
     return (
-      <aside className="concept-panel">
+      <Shell sheet={sheet}>
         <p className="error">Ошибка: {error}</p>
-      </aside>
+      </Shell>
     )
   }
   if (!details) {
-    return <aside className="concept-panel">{loading ? <p className="muted">Загрузка…</p> : <EmptyPanel nodes={nodes} onSelect={onSelect} />}</aside>
+    return <Shell sheet={sheet}>{loading ? <p className="muted">Загрузка…</p> : <EmptyPanel nodes={nodes} onSelect={onSelect} />}</Shell>
   }
   const n = details.node
   return (
-    <aside className="concept-panel">
+    <Shell sheet={sheet}>
       <div className="panel-head">
         <span className="tag accent">{nodeTypes[n.type].label}</span>
         <button className="icon-button" onClick={() => onSelect(null)} aria-label="Закрыть">
-          <Icon src={icons.x} size={17} />
+          <Icon src={icons.x} size={17} className="muted" />
         </button>
       </div>
 
@@ -74,7 +88,7 @@ export function ConceptPanel(props: Props) {
       ) : (
         <p className="muted">Загрузка…</p>
       )}
-    </aside>
+    </Shell>
   )
 }
 
@@ -154,7 +168,7 @@ function ConceptTab({ details, source, onSelect }: { details: NodeDetails; sourc
         <section className="inferred-box">
           <div className="source-head">
             <span className="caption">ДОПОЛНЕНО ИИ</span>
-            <Icon src={icons.sparkles} size={16} />
+            <Icon src={icons.sparkles} size={16} className="accent" />
           </div>
           <p>{n.note || 'В конспекте этого нет: понятие добавлено, чтобы граф был связным.'}</p>
         </section>
@@ -205,16 +219,18 @@ function ChainTab({ chain, nodes, onSelect, onFocus }: Props & { chain: Explanat
     <>
       <p className="overview">{chain.overview}</p>
       {chain.causalChain && (
-        <div className="causal">
-          {chain.causalChain.map((s, i) => (
-            <span key={s} className="causal-item">
-              {i > 0 && <span className="arrow">→</span>}
-              <button className="tag clickable" onClick={() => onSelect(s)}>
-                {nodes.get(s)?.title ?? s}
-              </button>
-            </span>
-          ))}
-        </div>
+        <section className="panel-section">
+          <div className="caption">ПРИЧИННАЯ ЦЕПОЧКА</div>
+          <ol className="causal">
+            {chain.causalChain.map((s) => (
+              <li key={s}>
+                <button className="tag clickable" onClick={() => onSelect(s)}>
+                  {nodes.get(s)?.title ?? s}
+                </button>
+              </li>
+            ))}
+          </ol>
+        </section>
       )}
       {chain.target.example && (
         <section className="example">
@@ -224,10 +240,12 @@ function ChainTab({ chain, nodes, onSelect, onFocus }: Props & { chain: Explanat
       )}
       <ol className="levels">
         {[...byLevel.entries()].map(([level, steps]) => (
-          <li key={level} className="level">
-            <div className="caption level-title">{level === 0 ? 'ИСХОДНЫЕ ПОНЯТИЯ' : level === last ? 'ИТОГ' : `УРОВЕНЬ ${level}`}</div>
+          <li key={level} className={level === last ? 'level final' : 'level'}>
+            <div className="caption level-title">
+              {level === 0 ? 'ИСХОДНЫЕ ПОНЯТИЯ' : level === last ? 'ИТОГ' : `ШАГ ${level}`}
+            </div>
             {steps.map((s) => (
-              <StepCard key={s.node.slug} step={s} onSelect={onSelect} onFocus={onFocus} />
+              <StepCard key={s.node.slug} step={s} final={level === last} onSelect={onSelect} onFocus={onFocus} />
             ))}
           </li>
         ))}
@@ -236,32 +254,35 @@ function ChainTab({ chain, nodes, onSelect, onFocus }: Props & { chain: Explanat
   )
 }
 
-function StepCard({ step, onSelect, onFocus }: { step: Step; onSelect: (s: string) => void; onFocus: (s: string) => void }) {
+function StepCard({ step, final, onSelect, onFocus }: { step: Step; final: boolean; onSelect: (s: string) => void; onFocus: (s: string) => void }) {
   const n = step.node
+  const select = (slug: string) => (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onSelect(slug)
+  }
   return (
-    <article className="step" style={{ borderLeftColor: nodeTypes[n.type].color }} onClick={() => onFocus(n.slug)} title="Показать на графе">
+    <article className={final ? 'step final' : 'step'} onClick={() => onFocus(n.slug)} title="Показать на графе">
       <div className="step-head">
-        <span className="step-index">{step.index}</span>
-        <button
-          className="link step-title"
-          onClick={(e) => {
-            e.stopPropagation()
-            onSelect(n.slug)
-          }}
-        >
+        <span className="step-index">{String(step.index).padStart(2, '0')}</span>
+        <button className="step-title" onClick={select(n.slug)}>
           {n.title}
         </button>
-        <span className="step-kind" style={{ color: nodeTypes[n.type].color }}>
+        <span className="step-kind">
+          <span className="type-dot" style={{ background: nodeTypes[n.type].color }} />
           {nodeTypes[n.type].label}
         </span>
       </div>
-      {n.formula && n.type !== 'quantity' && <Tex tex={n.formula} block />}
+      {n.formula && n.type !== 'quantity' && (
+        <div className="step-formula">
+          <Tex tex={n.formula} block />
+        </div>
+      )}
       {n.type === 'quantity' && n.formula && (
-        <div className="muted small">
-          Обозначение <Tex tex={n.formula} />
+        <div className="step-symbol">
+          <Tex tex={n.formula} />
           {n.unit && (
             <>
-              , единица <Tex tex={n.unit} />
+              , <Tex tex={n.unit} />
             </>
           )}
         </div>
@@ -269,12 +290,27 @@ function StepCard({ step, onSelect, onFocus }: { step: Step; onSelect: (s: strin
       <p className="step-summary">{n.summary}</p>
       {step.reasons.length > 0 && (
         <ul className="reasons">
-          {step.reasons.map((r) => (
-            <li key={`${r.from}:${r.type}`}>
-              {r.text}
-              {r.description && <span className="muted"> — {r.description}</span>}
-            </li>
-          ))}
+          {step.reasons.map((r) => {
+            // «Использует величину «Сила тока»» — название основания делаем ссылкой на него.
+            const quoted = `«${r.fromTitle}»`
+            const at = r.text.lastIndexOf(quoted)
+            return (
+              <li key={`${r.from}:${r.type}`}>
+                {at >= 0 ? (
+                  <>
+                    {r.text.slice(0, at)}
+                    <button className="reason-link" onClick={select(r.from)}>
+                      {r.fromTitle}
+                    </button>
+                    {r.text.slice(at + quoted.length)}
+                  </>
+                ) : (
+                  r.text
+                )}
+                {r.description && <span className="reason-note">{r.description}</span>}
+              </li>
+            )
+          })}
         </ul>
       )}
     </article>

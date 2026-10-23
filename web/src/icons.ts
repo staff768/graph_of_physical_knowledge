@@ -14,7 +14,6 @@ import fileTextSmall from './assets/figma/file-text-small.svg'
 import fileText from './assets/figma/file-text.svg'
 import fileUp from './assets/figma/file-up.svg'
 import hamburger from './assets/figma/hamburger.svg'
-import houseActive from './assets/figma/house-active.svg'
 import house from './assets/figma/house.svg'
 import layoutGrid from './assets/figma/layout-grid.svg'
 import legendDot from './assets/figma/legend-dot.svg'
@@ -24,7 +23,6 @@ import lock from './assets/figma/lock.svg'
 import maximize from './assets/figma/maximize.svg'
 import minus from './assets/figma/minus.svg'
 import moveUpRight from './assets/figma/move-up-right.svg'
-import networkActive from './assets/figma/network-active.svg'
 import networkStat from './assets/figma/network-stat.svg'
 import networkTab from './assets/figma/network-tab.svg'
 import network from './assets/figma/network.svg'
@@ -43,8 +41,8 @@ import x from './assets/figma/x.svg'
 
 export const icons = {
   arrowRight, brand, chevronRight, chevronsUpDown, circleCheck, circleHelp, clock, cloudCheck,
-  ellipsis, exampleConnections, fileText, fileTextSmall, fileUp, hamburger, house, houseActive,
+  ellipsis, exampleConnections, fileText, fileTextSmall, fileUp, hamburger, house,
   layoutGrid, legendDot, list, lock, lockSmall, maximize, minus, moveUpRight, network,
-  networkActive, networkStat, networkTab, plus, plusWhite, previewConnections, search,
+  networkStat, networkTab, plus, plusWhite, previewConnections, search,
   searchSmall, settings, shareWhite, sort, sparkles, starAccent, starMuted, x,
 }
