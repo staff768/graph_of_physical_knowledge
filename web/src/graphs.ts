@@ -31,10 +31,24 @@ export function invalidateGraphs() {
   allGraphs = null
 }
 
+const GRAPHS_EVENT = 'app:graphs-changed'
+
+// Список графов изменился (например, граф удалён): все useGraphs перезапрашивают его.
+export function notifyGraphsChanged() {
+  allGraphs = null
+  window.dispatchEvent(new Event(GRAPHS_EVENT))
+}
+
 // useGraphs возвращает графы, начиная с новых; с query — только подходящие по названию или понятиям.
 // Пока грузится новый запрос, остаются предыдущие результаты, чтобы список не мигал.
 export function useGraphs(query = ''): { graphs: GraphMeta[] | null; error: string | null } {
   const [state, setState] = useState<{ graphs: GraphMeta[] | null; error: string | null }>({ graphs: null, error: null })
+  const [version, setVersion] = useState(0)
+  useEffect(() => {
+    const bump = () => setVersion((v) => v + 1)
+    window.addEventListener(GRAPHS_EVENT, bump)
+    return () => window.removeEventListener(GRAPHS_EVENT, bump)
+  }, [])
   useEffect(() => {
     const q = query.trim()
     const ctrl = new AbortController()
@@ -52,7 +66,7 @@ export function useGraphs(query = ''): { graphs: GraphMeta[] | null; error: stri
         if (e.name !== 'AbortError' && !ctrl.signal.aborted) setState({ graphs: null, error: e.message })
       })
     return () => ctrl.abort()
-  }, [query])
+  }, [query, version])
   return state
 }
 

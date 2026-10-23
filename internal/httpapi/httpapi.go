@@ -29,6 +29,7 @@ type Store interface {
 	Neighbors(ctx context.Context, graphID, slug string) (incoming, outgoing []domain.Link, err error)
 	Ancestors(ctx context.Context, graphID, slug string) (domain.Graph, error)
 	Search(ctx context.Context, graphID, query string, limit int) ([]domain.Node, error)
+	DeleteGraph(ctx context.Context, graphID string) error
 }
 
 type handler struct {
@@ -58,6 +59,7 @@ func New(store Store, log *slog.Logger, static fs.FS, uploads *Uploads) http.Han
 			r.Route("/graphs/{graphID}", func(r chi.Router) {
 				r.Use(h.requireGraph)
 				r.Get("/", h.graph)
+				r.Delete("/", h.deleteGraph)
 				r.Get("/search", h.search)
 				r.Get("/nodes/{slug}", h.node)
 				r.Get("/nodes/{slug}/chain", h.chain)
@@ -181,6 +183,20 @@ func (h *handler) chain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, exp)
+}
+
+func (h *handler) deleteGraph(w http.ResponseWriter, r *http.Request) {
+	err := h.store.DeleteGraph(r.Context(), graphFrom(r).ID)
+	switch {
+	case errors.Is(err, storage.ErrDemoGraph):
+		writeError(w, http.StatusForbidden, "Демо-граф удалить нельзя.")
+	case errors.Is(err, storage.ErrNotFound):
+		writeError(w, http.StatusNotFound, "graph not found")
+	case err != nil:
+		h.internalError(w, err)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
 func (h *handler) search(w http.ResponseWriter, r *http.Request) {

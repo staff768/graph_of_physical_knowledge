@@ -13,6 +13,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -40,7 +42,7 @@ func main() {
 }
 
 func run() error {
-	notesPath := flag.String("notes", "testdata/notes/electricity.txt", "конспект (PDF, DOCX, TXT, JPG, PNG)")
+	notesPath := flag.String("notes", "testdata/notes/electricity.txt", "конспект (PDF, DOCX, TXT, JPG, PNG) или папка с фото страниц")
 	expectedPath := flag.String("expected", "testdata/notes/electricity.expected.yaml", "ожидаемые понятия")
 	out := flag.String("out", "", "сохранить построенный граф в JSON-файл")
 	priceIn := flag.Float64("price-in", 0, "цена 1M входных токенов (для оценки стоимости)")
@@ -52,15 +54,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("модель не настроена: %w (заполните .env по образцу .env.example)", err)
 	}
-	data, err := os.ReadFile(*notesPath)
-	if err != nil {
-		return err
-	}
-	kind, err := document.Kind(*notesPath, data)
-	if err != nil {
-		return err
-	}
-	doc, err := document.Parse(kind, data)
+	doc, err := loadNotes(*notesPath)
 	if err != nil {
 		return err
 	}
@@ -103,6 +97,8 @@ func run() error {
 	}
 	fmt.Printf("  понятий с цитатой из конспекта: %d из %d (%.0f%%)\n", explicitNodes, len(g.Nodes), pct(explicitNodes, len(g.Nodes)))
 	fmt.Printf("  связей, дополненных моделью:    %d из %d (%.0f%%)\n", inferredEdges, len(g.Edges), pct(inferredEdges, len(g.Edges)))
+	iso, parts := graphConnectivity(g)
+	fmt.Printf("  понятий без связей:             %d, отдельных частей графа: %d\n", iso, parts)
 	fmt.Printf("  автоисправлений:                %d\n", len(res.Fixes))
 	for _, f := range res.Fixes {
 		fmt.Printf("    · %s\n", f)
@@ -227,4 +223,71 @@ func pct(a, b int) float64 {
 		return 0
 	}
 	return 100 * float64(a) / float64(b)
+}
+
+// loadNotes читает конспект: файл или папку с фото страниц (по порядку имён).
+func loadNotes(path string) (document.Document, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return document.Document{}, err
+	}
+	var names []string
+	if info.IsDir() {
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return document.Document{}, err
+		}
+		for _, e := range entries {
+			if ext := strings.ToLower(filepath.Ext(e.Name())); ext == ".jpg" || ext == ".jpeg" || ext == ".png" {
+				if !strings.HasPrefix(strings.ToLower(e.Name()), "result") {
+					names = append(names, filepath.Join(path, e.Name()))
+				}
+			}
+		}
+		sort.Strings(names)
+	} else {
+		names = []string{path}
+	}
+	inputs := make([]document.Input, 0, len(names))
+	for _, n := range names {
+		data, err := os.ReadFile(n)
+		if err != nil {
+			return document.Document{}, err
+		}
+		kind, err := document.Kind(n, data)
+		if err != nil {
+			return document.Document{}, fmt.Errorf("%s: %w", n, err)
+		}
+		inputs = append(inputs, document.Input{MIME: kind, Data: data})
+	}
+	return document.ParseAll(inputs)
+}
+
+// graphConnectivity — понятия без связей и число связных частей графа.
+func graphConnectivity(g domain.Graph) (isolated, parts int) {
+	parent := map[string]string{}
+	var find func(string) string
+	find = func(x string) string {
+		if parent[x] != x {
+			parent[x] = find(parent[x])
+		}
+		return parent[x]
+	}
+	for _, n := range g.Nodes {
+		parent[n.Slug] = n.Slug
+	}
+	degree := map[string]int{}
+	for _, e := range g.Edges {
+		degree[e.From]++
+		degree[e.To]++
+		parent[find(e.From)] = find(e.To)
+	}
+	roots := map[string]bool{}
+	for _, n := range g.Nodes {
+		roots[find(n.Slug)] = true
+		if degree[n.Slug] == 0 {
+			isolated++
+		}
+	}
+	return isolated, len(roots)
 }

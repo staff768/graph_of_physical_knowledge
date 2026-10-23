@@ -309,3 +309,27 @@ func TestClaimJobWithoutUpload(t *testing.T) {
 		t.Errorf("status = %s, want failed", m.Status)
 	}
 }
+
+func TestDeleteGraph(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.DeleteGraph(ctx, "test-b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GraphMeta(ctx, "test-b"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("after delete: %v", err)
+	}
+	if err := s.DeleteGraph(ctx, "test-b"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("second delete: %v", err)
+	}
+	if err := s.ReplaceGraph(ctx, domain.GraphMeta{ID: "test-demo", Title: "Демо", Demo: true}, domain.Graph{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteGraph(ctx, "test-demo"); !errors.Is(err, ErrDemoGraph) {
+		t.Errorf("demo delete: %v", err)
+	}
+	// Граф test-a не пострадал.
+	if g, _ := s.Graph(ctx, "test-a"); len(g.Nodes) != 5 {
+		t.Errorf("test-a nodes = %d", len(g.Nodes))
+	}
+}

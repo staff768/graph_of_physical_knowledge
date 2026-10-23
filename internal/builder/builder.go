@@ -24,14 +24,6 @@ import (
 	"graph_of_physical_knowledge/internal/llm"
 )
 
-// maxLocalFixes — сколько ошибок проверки исправляется без повторного запроса к модели.
-const maxLocalFixes = 3
-
-// problems — число ошибок проверки (Validate объединяет их через errors.Join, по одной на строку).
-func problems(err error) int {
-	return strings.Count(err.Error(), "\n") + 1
-}
-
 // ErrNoPhysics — модель не нашла в конспекте физических понятий.
 var ErrNoPhysics = errors.New("no physics concepts found")
 
@@ -139,26 +131,20 @@ func (b *Builder) Build(ctx context.Context, doc document.Document, progress Pro
 	}
 
 	progress(StageLinking, fmt.Sprintf("найдено %d %s, проверяю связи", len(draft.Nodes), plural(len(draft.Nodes), "понятие", "понятия", "понятий")))
+	// Страницы и части разбираются по отдельности, и связей между ними мало:
+	// отдельный проход связывает одиночные понятия и куски графа.
+	if isolated, parts := connectivity(draft); isolated > 0 || parts > 1 {
+		progress(StageLinking, fmt.Sprintf("связываю понятия: без связей %d, отдельных частей %d", isolated, parts))
+		b.link(ctx, &draft, doc, &res)
+	}
 	ground(&draft, doc, &res)
 	g := b.toGraph(&draft, &res)
-	if err := content.Validate(g); err != nil && problems(err) <= maxLocalFixes {
-		// Несколько ошибок дешевле исправить на месте, чем заново генерировать весь граф моделью.
-		res.Fixes = append(res.Fixes, "граф исправлен без модели: "+truncateRunes(err.Error(), 300))
-		g = enforce(g, &res)
-	} else if err != nil {
-		b.log().Info("graph needs repair", "err", err)
-		payload, _ := json.Marshal(draft)
-		var fixed Draft
-		user := "Граф:\n" + string(payload) + "\n\nОшибки проверки:\n" + err.Error()
-		res.Fixes = append(res.Fixes, "граф отправлен модели на исправление: "+truncateRunes(err.Error(), 300))
-		if askErr := b.ask(ctx, &res, "repair", repairPrompt, user, nil, &fixed); askErr == nil && len(fixed.Nodes) > 0 {
-			ground(&fixed, doc, &res)
-			draft = fixed
-			g = b.toGraph(&draft, &res)
-		} else if askErr != nil {
-			res.Fixes = append(res.Fixes, "исправление моделью не удалось: "+askErr.Error())
-		}
-		g = enforce(g, &res)
+	// Ошибки структуры исправляются на месте: поменять тип или направление связи,
+	// разорвать цикл. Повторная генерация моделью медленная и помогала хуже.
+	g = enforce(g, &res)
+	if err := content.Validate(g); err != nil {
+		b.log().Warn("graph is still invalid after enforce", "err", err)
+		res.Fixes = append(res.Fixes, "граф не прошёл проверку: "+truncateRunes(err.Error(), 300))
 	}
 	if len(g.Nodes) < 2 {
 		return Result{}, ErrNoPhysics
@@ -273,6 +259,105 @@ func (b *Builder) ask(ctx context.Context, res *Result, task, system, user strin
 		return fmt.Errorf("%s: model returned invalid JSON: %w", task, err)
 	}
 	return nil
+}
+
+// connectivity считает понятия без связей и число связных частей черновика.
+func connectivity(d Draft) (isolated, parts int) {
+	parent := map[string]string{}
+	var find func(string) string
+	find = func(x string) string {
+		if parent[x] != x {
+			parent[x] = find(parent[x])
+		}
+		return parent[x]
+	}
+	for _, n := range d.Nodes {
+		parent[n.Slug] = n.Slug
+	}
+	degree := map[string]int{}
+	for _, e := range d.Edges {
+		if _, ok := parent[e.From]; !ok {
+			continue
+		}
+		if _, ok := parent[e.To]; !ok {
+			continue
+		}
+		degree[e.From]++
+		degree[e.To]++
+		parent[find(e.From)] = find(e.To)
+	}
+	roots := map[string]bool{}
+	for _, n := range d.Nodes {
+		roots[find(n.Slug)] = true
+		if degree[n.Slug] == 0 {
+			isolated++
+		}
+	}
+	return isolated, len(roots)
+}
+
+// linkTextLimit — сколько текста конспекта прикладывать к запросу связывания.
+const linkTextLimit = 12000
+
+// link просит модель связать одиночные понятия и отдельные части графа.
+// Сбой не ломает построение: граф просто останется менее связным.
+func (b *Builder) link(ctx context.Context, d *Draft, doc document.Document, res *Result) {
+	var sb strings.Builder
+	sb.WriteString("Понятия:\n")
+	for _, n := range d.Nodes {
+		fmt.Fprintf(&sb, "- %s (%s): %s — %s\n", n.Slug, n.Type, n.Title, n.Summary)
+	}
+	sb.WriteString("\nУже проведённые связи:\n")
+	for _, e := range d.Edges {
+		fmt.Fprintf(&sb, "- %s -[%s]-> %s\n", e.From, e.Type, e.To)
+	}
+	if text := doc.Text(); text != "" {
+		r := []rune(text)
+		if len(r) > linkTextLimit {
+			r = r[:linkTextLimit]
+		}
+		sb.WriteString("\nТекст конспекта:\n")
+		sb.WriteString(string(r))
+	}
+	var out struct {
+		Edges []DraftEdge `json:"edges"`
+	}
+	if err := b.ask(ctx, res, "link", linkPrompt, sb.String(), nil, &out); err != nil {
+		res.Fixes = append(res.Fixes, "связывание не удалось: "+err.Error())
+		return
+	}
+	// Берём только связи, которые соединяют разные части графа: каждая принятая связь
+	// объединяет две части, поэтому лишних «для количества» не бывает.
+	parent := map[string]string{}
+	var find func(string) string
+	find = func(x string) string {
+		if parent[x] != x {
+			parent[x] = find(parent[x])
+		}
+		return parent[x]
+	}
+	for _, n := range d.Nodes {
+		parent[n.Slug] = n.Slug
+	}
+	for _, e := range d.Edges {
+		if _, ok := parent[e.From]; ok {
+			if _, ok := parent[e.To]; ok {
+				parent[find(e.From)] = find(e.To)
+			}
+		}
+	}
+	accepted := 0
+	for _, e := range out.Edges {
+		_, okFrom := parent[e.From]
+		_, okTo := parent[e.To]
+		if !okFrom || !okTo || find(e.From) == find(e.To) {
+			continue
+		}
+		parent[find(e.From)] = find(e.To)
+		d.Edges = append(d.Edges, e)
+		accepted++
+	}
+	res.Fixes = append(res.Fixes, fmt.Sprintf("связывание: принято %d из %d предложенных связей", accepted, len(out.Edges)))
 }
 
 // parseJSON достаёт JSON-объект из ответа, даже если модель обернула его в ```json.
@@ -482,20 +567,29 @@ func enforce(g domain.Graph, res *Result) domain.Graph {
 	for _, n := range g.Nodes {
 		types[n.Slug] = n.Type
 	}
+	// Модель часто проводит осмысленную связь, но называет её не тем типом или ведёт
+	// в обратную сторону. Такую связь чиним, а не выбрасываем: иначе граф рассыпается.
 	kept := g.Edges[:0:0]
 	for _, e := range g.Edges {
-		if content.EdgeAllowed(e.Type, types[e.From], types[e.To]) {
-			kept = append(kept, e)
-			continue
-		}
-		// Частая ошибка — связь в обратную сторону.
-		if content.EdgeAllowed(e.Type, types[e.To], types[e.From]) {
+		from, to := types[e.From], types[e.To]
+		switch {
+		case content.EdgeAllowed(e.Type, from, to):
+		case content.EdgeAllowed(e.Type, to, from):
+			res.Fixes = append(res.Fixes, fmt.Sprintf("связь %s→%s развёрнута", e.From, e.To))
 			e.From, e.To = e.To, e.From
-			kept = append(kept, e)
-			res.Fixes = append(res.Fixes, fmt.Sprintf("связь %s→%s развёрнута", e.To, e.From))
-			continue
+		default:
+			if t, ok := content.TypeFor(from, to); ok {
+				res.Fixes = append(res.Fixes, fmt.Sprintf("связь %s→%s: тип %s → %s", e.From, e.To, e.Type, t))
+				e.Type = t
+			} else if t, ok := content.TypeFor(to, from); ok {
+				res.Fixes = append(res.Fixes, fmt.Sprintf("связь %s→%s развёрнута, тип %s → %s", e.From, e.To, e.Type, t))
+				e.From, e.To, e.Type = e.To, e.From, t
+			} else {
+				res.Fixes = append(res.Fixes, fmt.Sprintf("связь %s -[%s]-> %s удалена: недопустима", e.From, e.Type, e.To))
+				continue
+			}
 		}
-		res.Fixes = append(res.Fixes, fmt.Sprintf("связь %s -[%s]-> %s удалена: недопустима", e.From, e.Type, e.To))
+		kept = append(kept, e)
 	}
 	g.Edges = kept
 	for {
@@ -503,12 +597,20 @@ func enforce(g domain.Graph, res *Result) domain.Graph {
 		if cycle == nil {
 			break
 		}
+		// Рвём наименее ценную связь цикла: сначала «вводит величину» (частый цикл
+		// «формула вводит величину, величина входит в формулу»), затем дополненные моделью.
+		rank := func(e domain.Edge) int {
+			switch {
+			case e.Type == domain.EdgeDefines:
+				return 0
+			case e.Origin == domain.OriginInferred:
+				return 1
+			}
+			return 2
+		}
 		drop := -1
 		for i, e := range g.Edges {
-			if !onCycle(cycle, e) {
-				continue
-			}
-			if drop < 0 || (e.Origin == domain.OriginInferred && g.Edges[drop].Origin != domain.OriginInferred) {
+			if onCycle(cycle, e) && (drop < 0 || rank(e) < rank(g.Edges[drop])) {
 				drop = i
 			}
 		}

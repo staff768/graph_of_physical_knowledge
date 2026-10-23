@@ -19,6 +19,9 @@ import (
 
 var ErrNotFound = errors.New("not found")
 
+// ErrDemoGraph — демо-граф нельзя удалить: его загружает seed, он нужен для примера.
+var ErrDemoGraph = errors.New("demo graph cannot be deleted")
+
 type Store struct {
 	pool *pgxpool.Pool
 }
@@ -318,6 +321,23 @@ const metaColumns = `g.id, g.title, g.section, g.source, g.is_demo, g.created_at
 func metaDest(m *domain.GraphMeta) []any {
 	return []any{&m.ID, &m.Title, &m.Section, &m.Source, &m.Demo, &m.CreatedAt, &m.NodeCount, &m.EdgeCount,
 		&m.Status, &m.Stage, &m.StageNote, &m.Error, &m.Pages}
+}
+
+// DeleteGraph удаляет граф вместе с понятиями, связями и файлами (каскадом).
+func (s *Store) DeleteGraph(ctx context.Context, graphID string) error {
+	var demo bool
+	err := s.pool.QueryRow(ctx, `SELECT is_demo FROM graphs WHERE id = $1`, graphID).Scan(&demo)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if demo {
+		return ErrDemoGraph
+	}
+	_, err = s.pool.Exec(ctx, `DELETE FROM graphs WHERE id = $1`, graphID)
+	return err
 }
 
 // GraphMeta возвращает сведения об одном графе.

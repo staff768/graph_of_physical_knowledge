@@ -84,9 +84,13 @@ var slugRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 var allowedEdges = map[domain.EdgeType][][2]domain.NodeType{
 	domain.EdgeFormulates: {{domain.NodeLaw, domain.NodeFormula}},
 	domain.EdgeUsedIn:     {{domain.NodeQuantity, domain.NodeFormula}, {domain.NodeQuantity, domain.NodeLaw}},
-	domain.EdgeDerives:    {{domain.NodeFormula, domain.NodeFormula}, {domain.NodeLaw, domain.NodeLaw}},
+	domain.EdgeDerives: {
+		{domain.NodeFormula, domain.NodeFormula}, {domain.NodeLaw, domain.NodeLaw},
+		{domain.NodeQuantity, domain.NodeQuantity}, // величина выводится из величины: заряд → заряд электрона
+	},
 	domain.EdgeExplains: {
 		{domain.NodeLaw, domain.NodePhenomenon}, {domain.NodeFormula, domain.NodePhenomenon},
+		{domain.NodeQuantity, domain.NodePhenomenon}, // величина объясняет явление: заряд → притяжение тел
 	},
 	domain.EdgeCauses: {{domain.NodePhenomenon, domain.NodePhenomenon}},
 	domain.EdgeDefines: {
@@ -151,6 +155,21 @@ func Validate(g domain.Graph) error {
 		return fmt.Errorf("graph has a cycle: %s", strings.Join(cycle, " -> "))
 	}
 	return nil
+}
+
+// typePreference — порядок, в котором подбирается тип связи для пары типов узлов.
+var typePreference = []domain.EdgeType{
+	domain.EdgeExplains, domain.EdgeCauses, domain.EdgeFormulates, domain.EdgeUsedIn, domain.EdgeDerives, domain.EdgeDefines,
+}
+
+// TypeFor возвращает подходящий тип связи между узлами этих типов, если он есть.
+func TypeFor(from, to domain.NodeType) (domain.EdgeType, bool) {
+	for _, t := range typePreference {
+		if EdgeAllowed(t, from, to) {
+			return t, true
+		}
+	}
+	return "", false
 }
 
 // EdgeAllowed сообщает, допустима ли связь типа t между узлами этих типов.

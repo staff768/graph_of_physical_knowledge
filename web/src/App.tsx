@@ -1,11 +1,13 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { EmptyState } from './components/EmptyState'
 import { Nav } from './components/Nav'
 import { DEMO_GRAPH_ID, graphPath } from './graphs'
-import { GraphPage } from './pages/GraphPage'
 import { HomePage } from './pages/HomePage'
 import { LibraryPage } from './pages/LibraryPage'
 import { linkClick, navigate, useLocation } from './router'
+
+// Страница графа тянет Cytoscape, KaTeX и Markdown — грузим её только когда она нужна.
+const GraphPage = lazy(() => import('./pages/GraphPage').then((m) => ({ default: m.GraphPage })))
 
 export default function App() {
   const { path } = useLocation()
@@ -20,7 +22,12 @@ export default function App() {
   const section = graphMatch || path.startsWith('/graphs') ? 'graphs' : 'home'
 
   let page
-  if (graphMatch) page = <GraphPage id={graphMatch[1]} />
+  if (graphMatch)
+    page = (
+      <Suspense fallback={<div className="loading-line page-loading" aria-label="Загрузка" />}>
+        <GraphPage id={graphMatch[1]} />
+      </Suspense>
+    )
   else if (path === '/graphs' || path === '/graphs/') page = <LibraryPage />
   else if (path === '/') page = <HomePage />
   else

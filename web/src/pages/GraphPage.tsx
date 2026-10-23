@@ -67,7 +67,34 @@ export function GraphPage({ id }: { id: string }) {
   const loading = !!selected && !current && !error
 
   const nodesBySlug = useMemo(() => new Map((graph?.nodes ?? []).map((n) => [n.slug, n])), [graph])
-  const chainSet = useMemo(() => (chain ? new Set(chain.graph.nodes.map((n) => n.slug)) : null), [chain])
+  // Следствия выбранного понятия — обход графа вперёд по связям (ширина = удалённость).
+  const consequences = useMemo(() => {
+    if (!graph || !selected) return []
+    const out = new Map<string, string[]>()
+    for (const e of graph.edges) out.set(e.from, [...(out.get(e.from) ?? []), e.to])
+    const depth = new Map<string, number>([[selected, 0]])
+    const queue = [selected]
+    while (queue.length > 0) {
+      const cur = queue.shift()!
+      for (const next of out.get(cur) ?? []) {
+        if (!depth.has(next)) {
+          depth.set(next, depth.get(cur)! + 1)
+          queue.push(next)
+        }
+      }
+    }
+    return [...depth.entries()]
+      .filter(([slug]) => slug !== selected)
+      .map(([slug, d]) => ({ node: nodesBySlug.get(slug)!, depth: d }))
+      .filter((c) => c.node)
+      .sort((a, b) => a.depth - b.depth || a.node.title.localeCompare(b.node.title, 'ru'))
+  }, [graph, selected, nodesBySlug])
+
+  // На вкладке «Что следует» подсвечиваются следствия, на остальных — основания (цепочка).
+  const chainSet = useMemo(() => {
+    if (tab === 'consequences' && selected) return new Set([selected, ...consequences.map((c) => c.node.slug)])
+    return chain ? new Set(chain.graph.nodes.map((n) => n.slug)) : null
+  }, [tab, selected, consequences, chain])
   const focusNode = useCallback((slug: string) => setFocus((f) => ({ slug, seq: (f?.seq ?? 0) + 1 })), [])
 
   const toggleType = (t: NodeType) =>
@@ -227,6 +254,7 @@ export function GraphPage({ id }: { id: string }) {
             <ConceptPanel
               nodes={nodesBySlug}
               source={meta?.demo ? undefined : meta?.source}
+              consequences={consequences}
               details={details}
               chain={chain}
               loading={loading}

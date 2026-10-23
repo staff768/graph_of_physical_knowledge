@@ -6,3 +6,8 @@ web/dist
 .env
 .claude
 CLAUDE.md
+.DS_Store
+testdata/conspect_pdf/
+testdata/docx_conspect/
+testdata/handwrite_one_page_conspects_photo/
+testdata/handwrite_few_page_conspects_photo/

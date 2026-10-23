@@ -68,6 +68,7 @@ export interface Explanation {
   target: GraphNode
   overview: string
   causalChain: string[] | null
+  causalPaths: string[][] | null
   steps: Step[]
   levels: number
   graph: Graph
@@ -122,6 +123,13 @@ export const api = {
   chain: (id: string, slug: string, signal?: AbortSignal) =>
     get<Explanation>(`${graphBase(id)}/nodes/${enc(slug)}/chain`, signal),
   search: (id: string, q: string, signal?: AbortSignal) => get<GraphNode[]>(`${graphBase(id)}/search?q=${enc(q)}`, signal),
+  deleteGraph: async (id: string): Promise<void> => {
+    const res = await fetch(graphBase(id), { method: 'DELETE' })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new ApiError(res.status, body.error ?? `HTTP ${res.status}`)
+    }
+  },
   // Один документ или несколько фото страниц — в порядке страниц.
   upload: async (files: File[]): Promise<{ id: string; existing?: boolean }> => {
     const form = new FormData()

@@ -299,6 +299,23 @@ a.context-link:hover { color: var(--text); }
 }
 .menu > * { padding: 8px 10px; border-radius: 6px; font-size: 13px; text-align: left; text-decoration: none; }
 .menu > *:hover { background: var(--sand); }
+.menu > .danger { color: var(--danger); }
+.menu > .danger:hover { background: var(--danger-soft); }
+.graph-card-tools { display: flex; align-items: center; gap: 4px; }
+.button.danger { background: var(--danger); border-color: var(--danger); color: var(--surface); }
+.button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 85%, var(--text)); border-color: transparent; }
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px;
+  background: color-mix(in srgb, var(--text) 35%, transparent);
+}
+.modal {
+  width: 100%; max-width: 420px; padding: 24px; display: flex; flex-direction: column; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
+}
+.modal-title { font-family: var(--font-serif); font-size: 22px; line-height: 1.25; }
+.modal-text { font-size: 14px; line-height: 1.6; color: var(--muted); }
+.modal-error { font-size: 13px; color: var(--danger); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 
 /* ---------- Мои графы ---------- */
 .library-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
@@ -323,6 +340,7 @@ a.context-link:hover { color: var(--text); }
 .filter-chip:hover:not(.active) { color: var(--text); }
 .filter-chip.active { background: var(--text); border-color: var(--text); color: var(--bg); }
 .empty { padding: 48px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
+.page-loading { margin: 0; }
 .loading-line { height: 2px; border-radius: 1px; background: linear-gradient(90deg, transparent, var(--accent), transparent); background-size: 50% 100%; background-repeat: no-repeat; animation: loading 1.2s linear infinite; }
 @keyframes loading { from { background-position: -50% 0; } to { background-position: 150% 0; } }
 @media (prefers-reduced-motion: reduce) { .loading-line { animation: none; background: var(--border); } }
@@ -546,6 +564,16 @@ a.context-link:hover { color: var(--text); }
 .tex-block { display: block; overflow-x: auto; overflow-y: hidden; }
 
 .overview { font-size: 14px; line-height: 1.65; }
+.tab-count { margin-left: 4px; font-size: 11px; color: var(--muted); }
+.consequences { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.consequence {
+  width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; text-align: left;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+}
+.consequence:hover { border-color: var(--edge-strong); }
+.consequence-title { flex: 1; font-size: 13px; font-weight: 500; }
+.consequence-kind { font-size: 11px; color: var(--muted); }
+.causal + .causal { margin-top: 6px; }
 .causal { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .causal li { display: inline-flex; align-items: center; gap: 6px; }
 .causal li + li::before { content: '→'; color: var(--muted); }

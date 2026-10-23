@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { GraphMeta } from '../api'
-import { conceptCount, graphPath, linkCount } from '../graphs'
+import { api } from '../api'
+import { conceptCount, graphPath, linkCount, notifyGraphsChanged } from '../graphs'
+import { ConfirmDialog } from './ConfirmDialog'
 import { Icon, Mask } from './Icon'
 import { icons } from '../icons'
 import { linkClick } from '../router'
@@ -23,6 +25,23 @@ const satellites = [
 
 export function GraphCard({ meta, tint, favorite, onToggleFavorite, layout = 'grid' }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const remove = async () => {
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await api.deleteGraph(meta.id)
+      setConfirming(false)
+      notifyGraphsChanged()
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Не удалось удалить граф.')
+    } finally {
+      setDeleting(false)
+    }
+  }
   const href = graphPath(meta.id)
   const concepts = (meta.preview ?? []).slice(0, satellites.length)
   const when = meta.demo ? 'демо' : formatDate(meta.createdAt)
@@ -57,11 +76,12 @@ export function GraphCard({ meta, tint, favorite, onToggleFavorite, layout = 'gr
           ) : (
             <span className="tag">{meta.section || 'Физика'}</span>
           )}
-          {favorite ? (
-            <button className="icon-button" onClick={onToggleFavorite} aria-label="Убрать из избранного" title="Убрать из избранного">
-              <Icon src={icons.starAccent} size={17} className="accent" />
-            </button>
-          ) : (
+          <div className="graph-card-tools">
+            {favorite && (
+              <button className="icon-button" onClick={onToggleFavorite} aria-label="Убрать из избранного" title="Убрать из избранного">
+                <Icon src={icons.starAccent} size={17} className="accent" />
+              </button>
+            )}
             <div className="menu-anchor">
               <button className="icon-button" onClick={() => setMenuOpen((o) => !o)} onBlur={() => setTimeout(() => setMenuOpen(false), 150)} aria-label="Действия" aria-expanded={menuOpen}>
                 <Icon src={icons.ellipsis} size={17} className="muted" />
@@ -69,15 +89,37 @@ export function GraphCard({ meta, tint, favorite, onToggleFavorite, layout = 'gr
               {menuOpen && (
                 <div className="menu" role="menu">
                   <a role="menuitem" href={href} onClick={linkClick(href)}>Открыть</a>
-                  <button role="menuitem" onMouseDown={onToggleFavorite}>В избранное</button>
+                  <button role="menuitem" onMouseDown={onToggleFavorite}>
+                    {favorite ? 'Убрать из избранного' : 'В избранное'}
+                  </button>
+                  {!meta.demo && (
+                    <button role="menuitem" className="danger" onMouseDown={() => setConfirming(true)}>
+                      Удалить
+                    </button>
+                  )}
                 </div>
               )}
             </div>
-          )}
+          </div>
         </div>
         <a className="graph-card-title" href={href} onClick={linkClick(href)}>{meta.title}</a>
         <div className="graph-card-meta">{stats.join(' · ')}</div>
       </div>
+      {confirming && (
+        <ConfirmDialog
+          title={`Удалить граф «${meta.title}»?`}
+          confirmLabel="Удалить"
+          busy={deleting}
+          error={deleteError}
+          onConfirm={() => void remove()}
+          onCancel={() => {
+            setConfirming(false)
+            setDeleteError(null)
+          }}
+        >
+          Граф и все его понятия удалятся без возможности восстановления.
+        </ConfirmDialog>
+      )}
     </article>
   )
 }

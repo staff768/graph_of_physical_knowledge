@@ -2,9 +2,16 @@ import type { Explanation, GraphNode, Link, NodeDetails, Step } from '../api'
 import { Icon } from './Icon'
 import { icons } from '../icons'
 import { featured, nodeTypes } from '../meta'
+import { plural } from '../graphs'
 import { Md, Tex } from './Tex'
 
-export type Tab = 'concept' | 'chain'
+export type Tab = 'concept' | 'chain' | 'consequences'
+
+// Следствие понятия и его удалённость: 1 — прямое следствие.
+export interface Consequence {
+  node: GraphNode
+  depth: number
+}
 
 interface Props {
   nodes: Map<string, GraphNode>
@@ -18,6 +25,8 @@ interface Props {
   onTab: (t: Tab) => void
   onSelect: (slug: string | null) => void
   onFocus: (slug: string) => void
+  // Что следует из выбранного понятия (потомки в графе).
+  consequences: Consequence[]
   // На телефоне карточка — нижняя шторка: свёрнута или развёрнута.
   sheet?: { expanded: boolean; onToggle: () => void }
 }
@@ -79,10 +88,17 @@ export function ConceptPanel(props: Props) {
         <button role="tab" aria-selected={tab === 'chain'} className={tab === 'chain' ? 'active' : ''} onClick={() => onTab('chain')}>
           Разбор цепочки
         </button>
+        {props.consequences.length > 0 && (
+          <button role="tab" aria-selected={tab === 'consequences'} className={tab === 'consequences' ? 'active' : ''} onClick={() => onTab('consequences')}>
+            Что следует <span className="tab-count">{props.consequences.length}</span>
+          </button>
+        )}
       </nav>
 
       {tab === 'concept' ? (
         <ConceptTab details={details} source={props.source} onSelect={onSelect} />
+      ) : tab === 'consequences' ? (
+        <ConsequencesTab title={n.title} items={props.consequences} onSelect={onSelect} />
       ) : props.chain ? (
         <ChainTab {...props} chain={props.chain} />
       ) : (
@@ -90,6 +106,15 @@ export function ConceptPanel(props: Props) {
       )}
     </Shell>
   )
+}
+
+// С чего начать: у демо-графа — подобранные явления, у остальных — явления графа, затем законы.
+function suggestions(nodes: Map<string, GraphNode>): string[] {
+  const demo = featured.filter((s) => nodes.has(s))
+  if (demo.length > 0) return demo
+  const all = [...nodes.values()]
+  const byType = (t: GraphNode['type']) => all.filter((n) => n.type === t).map((n) => n.slug)
+  return [...byType('phenomenon'), ...byType('law'), ...byType('formula')].slice(0, 5)
 }
 
 function EmptyPanel({ nodes, onSelect }: { nodes: Map<string, GraphNode>; onSelect: (s: string) => void }) {
@@ -101,7 +126,7 @@ function EmptyPanel({ nodes, onSelect }: { nodes: Map<string, GraphNode>; onSele
       </p>
       <div className="caption">С ЧЕГО НАЧАТЬ</div>
       <div className="tag-list">
-        {featured.filter((s) => nodes.has(s)).map((s) => (
+        {suggestions(nodes).map((s) => (
           <button key={s} className="tag clickable" onClick={() => onSelect(s)}>
             {nodes.get(s)!.title}
           </button>
@@ -218,18 +243,20 @@ function ChainTab({ chain, nodes, onSelect, onFocus }: Props & { chain: Explanat
   return (
     <>
       <p className="overview">{chain.overview}</p>
-      {chain.causalChain && (
+      {chain.causalPaths && chain.causalPaths.length > 0 && (
         <section className="panel-section">
-          <div className="caption">ПРИЧИННАЯ ЦЕПОЧКА</div>
-          <ol className="causal">
-            {chain.causalChain.map((s) => (
-              <li key={s}>
-                <button className="tag clickable" onClick={() => onSelect(s)}>
-                  {nodes.get(s)?.title ?? s}
-                </button>
-              </li>
-            ))}
-          </ol>
+          <div className="caption">{chain.causalPaths.length > 1 ? 'ПРИЧИННЫЕ ЦЕПОЧКИ' : 'ПРИЧИННАЯ ЦЕПОЧКА'}</div>
+          {chain.causalPaths.map((path) => (
+            <ol key={path.join('>')} className="causal">
+              {path.map((s) => (
+                <li key={s}>
+                  <button className="tag clickable" onClick={() => onSelect(s)}>
+                    {nodes.get(s)?.title ?? s}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          ))}
         </section>
       )}
       {chain.target.example && (
@@ -250,6 +277,38 @@ function ChainTab({ chain, nodes, onSelect, onFocus }: Props & { chain: Explanat
           </li>
         ))}
       </ol>
+    </>
+  )
+}
+
+// Следствия понятия, сгруппированные по удалённости.
+function ConsequencesTab({ title, items, onSelect }: { title: string; items: Consequence[]; onSelect: (s: string) => void }) {
+  const groups: { label: string; items: Consequence[] }[] = [
+    { label: 'НАПРЯМУЮ', items: items.filter((c) => c.depth === 1) },
+    { label: 'ЧЕРЕЗ ОДНО ПОНЯТИЕ', items: items.filter((c) => c.depth === 2) },
+    { label: 'ДАЛЬШЕ ПО ЦЕПОЧКЕ', items: items.filter((c) => c.depth >= 3) },
+  ].filter((g) => g.items.length > 0)
+  return (
+    <>
+      <p className="overview">
+        Из «{title}» следует {items.length} {plural(items.length, 'понятие', 'понятия', 'понятий')} — на графе они подсвечены.
+      </p>
+      {groups.map((g) => (
+        <section key={g.label} className="panel-section">
+          <div className="caption">{g.label}</div>
+          <ul className="consequences">
+            {g.items.map(({ node }) => (
+              <li key={node.slug}>
+                <button className="consequence" onClick={() => onSelect(node.slug)}>
+                  <span className="type-dot" style={{ background: nodeTypes[node.type].color }} />
+                  <span className="consequence-title">{node.title}</span>
+                  <span className="consequence-kind">{nodeTypes[node.type].label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
     </>
   )
 }

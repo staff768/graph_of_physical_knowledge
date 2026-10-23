@@ -13,8 +13,8 @@ const extractPrompt = `Ты — методист по физике. По кон�
 Связи всегда направлены от основания к следствию (from → to). Допустимы только такие:
 - formulates: law → formula (закон записывается формулой);
 - used_in: quantity → formula, quantity → law (величина входит в соотношение);
-- derives: formula → formula, law → law (одно выводится из другого);
-- explains: law → phenomenon, formula → phenomenon (объясняет явление);
+- derives: formula → formula, law → law, quantity → quantity (одно выводится из другого или частный случай);
+- explains: law → phenomenon, formula → phenomenon, quantity → phenomenon (объясняет или характеризует явление);
 - causes: phenomenon → phenomenon (одно явление вызывает другое);
 - defines: law → quantity, formula → quantity, phenomenon → quantity (вводит величину).
 Циклов быть не должно.
@@ -42,11 +42,24 @@ const extractPrompt = `Ты — методист по физике. По кон�
 
 const knownNodesIntro = `Эти понятия уже найдены в предыдущих частях конспекта. Используй их slug, если встречаешь те же понятия, и связывай с ними новые:`
 
-const repairPrompt = `Ты исправляешь граф знаний по физике. Ниже — граф в JSON и список ошибок проверки.
-Исправь только ошибки: поменяй тип связи или её направление, удали лишнюю связь, разорви цикл.
-Допустимые связи: formulates (law→formula), used_in (quantity→formula|law), derives (formula→formula, law→law),
-explains (law|formula→phenomenon), causes (phenomenon→phenomenon), defines (law|formula|phenomenon→quantity).
-Ответь ОДНИМ JSON-объектом той же структуры (title, section, nodes, edges), без пояснений.`
+const linkPrompt = `Ты — методист по физике. Ниже — понятия, найденные в конспекте школьника, и уже проведённые связи между ними.
+Граф получился разрозненным: часть понятий ни с чем не связана, или граф распался на отдельные куски.
+Добавь недостающие связи, чтобы каждое понятие было связано с остальными и граф стал единым.
+
+Допустимы только такие связи (from → to, от основания к следствию):
+- formulates: law → formula;
+- used_in: quantity → formula, quantity → law;
+- derives: formula → formula, law → law, quantity → quantity;
+- explains: law → phenomenon, formula → phenomenon, quantity → phenomenon;
+- causes: phenomenon → phenomenon;
+- defines: law → quantity, formula → quantity, phenomenon → quantity.
+Циклов быть не должно. Используй только slug из списка, новых понятий не придумывай, уже проведённые связи не повторяй.
+
+Происхождение: если связь прямо видна в тексте конспекта (он приложен, если доступен), укажи origin "explicit" и дословную цитату в quote.
+Иначе origin "inferred" и в note одним предложением объясни, почему связь верна (школьная физика).
+Нужны только связи, которые соединяют понятие без связей или отдельную часть графа с остальными — обычно хватает одной связи на каждое такое понятие или часть. Каждая связь должна быть физически осмысленной.
+
+Ответь ОДНИМ JSON-объектом: {"edges": [{"from": "", "to": "", "type": "", "description": "", "origin": "inferred", "quote": "", "note": ""}]}`
 
 const checkPrompt = `Ты — учитель физики. Проверь формулы и законы из конспекта школьника.
 Для каждого понятия дано, что записано в конспекте, и формула в графе. Проверяй прежде всего запись в конспекте:

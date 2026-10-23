@@ -59,6 +59,13 @@ func (s fakeStore) Ancestors(ctx context.Context, graphID, slug string) (domain.
 	return fakeGraph, nil
 }
 
+func (fakeStore) DeleteGraph(_ context.Context, id string) error {
+	if id == "demo" {
+		return storage.ErrDemoGraph
+	}
+	return nil
+}
+
 func (fakeStore) Search(context.Context, string, string, int) ([]domain.Node, error) {
 	return fakeGraph.Nodes[:1], nil
 }
@@ -119,5 +126,20 @@ func TestChainResponse(t *testing.T) {
 	_, body := get(t, "/api/graphs/g/nodes/phen/chain")
 	if steps, _ := body["steps"].([]any); len(steps) != 2 {
 		t.Errorf("steps = %v", body["steps"])
+	}
+}
+
+func TestDeleteGraph(t *testing.T) {
+	h := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
+	del := func(path string) int {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, path, nil))
+		return rec.Code
+	}
+	if code := del("/api/graphs/g"); code != http.StatusNoContent {
+		t.Errorf("delete g: %d, want 204", code)
+	}
+	if code := del("/api/graphs/missing"); code != http.StatusNotFound {
+		t.Errorf("delete missing: %d, want 404", code)
 	}
 }

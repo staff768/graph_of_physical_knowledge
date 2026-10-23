@@ -2,6 +2,7 @@ package explain
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"graph_of_physical_knowledge/internal/domain"
@@ -107,5 +108,33 @@ func TestPlural(t *testing.T) {
 		if got := plural(n, "понятие", "понятия", "понятий"); got != want {
 			t.Errorf("plural(%d) = %s, want %s", n, got, want)
 		}
+	}
+}
+
+func TestCausalPathsAllBranches(t *testing.T) {
+	// Две независимые причины молнии: электризация облака и пробой воздуха.
+	g := domain.Graph{
+		Nodes: []domain.Node{
+			{Slug: "friction", Type: domain.NodePhenomenon, Title: "Трение льдинок"},
+			{Slug: "electrification", Type: domain.NodePhenomenon, Title: "Электризация"},
+			{Slug: "breakdown", Type: domain.NodePhenomenon, Title: "Пробой"},
+			{Slug: "lightning", Type: domain.NodePhenomenon, Title: "Молния"},
+		},
+		Edges: []domain.Edge{
+			{From: "friction", To: "electrification", Type: domain.EdgeCauses},
+			{From: "electrification", To: "lightning", Type: domain.EdgeCauses},
+			{From: "breakdown", To: "lightning", Type: domain.EdgeCauses},
+		},
+	}
+	exp, err := Build("lightning", g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"friction", "electrification", "lightning"}, {"breakdown", "lightning"}}
+	if len(exp.CausalPaths) != 2 || !slices.Equal(exp.CausalPaths[0], want[0]) || !slices.Equal(exp.CausalPaths[1], want[1]) {
+		t.Errorf("paths = %v, want %v", exp.CausalPaths, want)
+	}
+	if !slices.Equal(exp.CausalChain, want[0]) || !strings.Contains(exp.Overview, "Причинные цепочки") {
+		t.Errorf("chain = %v, overview = %q", exp.CausalChain, exp.Overview)
 	}
 }

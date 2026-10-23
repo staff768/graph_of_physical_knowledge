@@ -37,7 +37,10 @@ type Explanation struct {
 	// CausalChain — цепочка явлений, причинно приводящая к цели (включая её),
 	// если цель — явление и у неё есть причины.
 	CausalChain []string `json:"causalChain"`
-	Steps       []Step   `json:"steps"`
+	// CausalPaths — все причинные цепочки до цели (самые длинные первыми, не больше maxCausalPaths).
+	// CausalChain совпадает с первой из них.
+	CausalPaths [][]string `json:"causalPaths"`
+	Steps       []Step     `json:"steps"`
 	// Levels — количество уровней (глубина) цепочки.
 	Levels int          `json:"levels"`
 	Graph  domain.Graph `json:"graph"`
@@ -122,11 +125,16 @@ func Build(target string, sub domain.Graph) (Explanation, error) {
 		steps = append(steps, Step{Index: i + 1, Level: level[n.Slug], Node: n, Reasons: reasons})
 	}
 
-	chain := causalChain(target, incoming, level)
+	paths := causalPaths(target, incoming)
+	var chain []string
+	if len(paths) > 0 {
+		chain = paths[0]
+	}
 	return Explanation{
 		Target:      targetNode,
-		Overview:    overview(targetNode, nodes, chain, byslug, incoming),
+		Overview:    overview(targetNode, nodes, paths, byslug, incoming),
 		CausalChain: chain,
+		CausalPaths: paths,
 		Steps:       steps,
 		Levels:      level[target] + 1,
 		Graph:       sub,
@@ -159,39 +167,38 @@ func longestPathLevels(nodes []domain.Node, incoming, outgoing map[string][]doma
 	return level
 }
 
-// causalChain восстанавливает самую длинную цепочку явлений по рёбрам causes,
-// заканчивающуюся в target. Возвращает nil, если причин у цели нет.
-func causalChain(target string, incoming map[string][]domain.Edge, level map[string]int) []string {
-	chain := []string{target}
-	visited := map[string]bool{target: true}
-	cur := target
-	for {
-		next := ""
+// maxCausalPaths — сколько причинных цепочек показывать.
+const maxCausalPaths = 5
+
+// causalPaths перечисляет цепочки явлений по рёбрам causes, которые заканчиваются в target:
+// от самой первой причины до цели. Самые длинные — первыми. Nil, если причин нет.
+func causalPaths(target string, incoming map[string][]domain.Edge) [][]string {
+	var paths [][]string
+	var walk func(cur string, suffix []string, seen map[string]bool)
+	walk = func(cur string, suffix []string, seen map[string]bool) {
+		extended := false
 		for _, e := range incoming[cur] {
-			if e.Type != domain.EdgeCauses || visited[e.From] {
+			if e.Type != domain.EdgeCauses || seen[e.From] {
 				continue
 			}
-			if next == "" || level[e.From] > level[next] {
-				next = e.From
-			}
+			extended = true
+			seen[e.From] = true
+			walk(e.From, append([]string{e.From}, suffix...), seen)
+			delete(seen, e.From)
 		}
-		if next == "" {
-			break
+		if !extended && len(suffix) > 1 {
+			paths = append(paths, suffix)
 		}
-		visited[next] = true
-		chain = append(chain, next)
-		cur = next
 	}
-	if len(chain) == 1 {
-		return nil
+	walk(target, []string{target}, map[string]bool{target: true})
+	sort.SliceStable(paths, func(i, j int) bool { return len(paths[i]) > len(paths[j]) })
+	if len(paths) > maxCausalPaths {
+		paths = paths[:maxCausalPaths]
 	}
-	for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
-		chain[i], chain[j] = chain[j], chain[i]
-	}
-	return chain
+	return paths
 }
 
-func overview(target domain.Node, nodes []domain.Node, chain []string, byslug map[string]domain.Node, incoming map[string][]domain.Edge) string {
+func overview(target domain.Node, nodes []domain.Node, paths [][]string, byslug map[string]domain.Node, incoming map[string][]domain.Edge) string {
 	var baseLaws, derivedLaws, formulas []string
 	for _, n := range nodes {
 		if n.Slug == target.Slug {
@@ -225,12 +232,20 @@ func overview(target domain.Node, nodes []domain.Node, chain []string, byslug ma
 	if len(formulas) > 0 {
 		fmt.Fprintf(&b, " Ключевые соотношения: %s.", strings.Join(formulas, ", "))
 	}
-	if len(chain) > 1 {
-		titles := make([]string, len(chain))
-		for i, s := range chain {
+	rows := make([]string, 0, len(paths))
+	for _, p := range paths {
+		titles := make([]string, len(p))
+		for i, s := range p {
 			titles[i] = byslug[s].Title
 		}
-		fmt.Fprintf(&b, " Причинная цепочка: %s.", strings.Join(titles, " → "))
+		rows = append(rows, strings.Join(titles, " → "))
+	}
+	switch len(rows) {
+	case 0:
+	case 1:
+		fmt.Fprintf(&b, " Причинная цепочка: %s.", rows[0])
+	default:
+		fmt.Fprintf(&b, " Причинные цепочки: %s.", strings.Join(rows, "; "))
 	}
 	return b.String()
 }

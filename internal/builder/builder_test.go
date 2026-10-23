@@ -248,33 +248,63 @@ func TestStubOnRealNotes(t *testing.T) {
 	}
 }
 
-func TestBuildAsksModelWhenGraphIsBadlyBroken(t *testing.T) {
-	// Четыре недопустимые связи — больше, чем исправляется на месте.
-	broken := `{"title": "T", "nodes": [
-		{"slug": "a", "type": "law", "title": "Закон А", "origin": "inferred"},
-		{"slug": "b", "type": "law", "title": "Закон Б", "origin": "inferred"},
-		{"slug": "p", "type": "phenomenon", "title": "Явление П", "origin": "inferred"},
-		{"slug": "q", "type": "phenomenon", "title": "Явление Q", "origin": "inferred"}
+func TestBuildRetypesEdgesInsteadOfDropping(t *testing.T) {
+	// Живые конспекты: «электризация вызывает заряд», «заряд объясняет электроскоп»,
+	// «сила тока вводит ампер» — смысл верный, тип не тот. Связи должны сохраниться.
+	draft := `{"title": "T", "nodes": [
+		{"slug": "electrification", "type": "phenomenon", "title": "Электризация", "origin": "inferred"},
+		{"slug": "charge", "type": "quantity", "title": "Заряд", "origin": "inferred"},
+		{"slug": "electroscope", "type": "phenomenon", "title": "Электроскоп", "origin": "inferred"},
+		{"slug": "current", "type": "quantity", "title": "Сила тока", "origin": "inferred"},
+		{"slug": "ampere", "type": "quantity", "title": "Ампер", "origin": "inferred"},
+		{"slug": "law", "type": "law", "title": "Закон", "origin": "inferred"}
 	], "edges": [
-		{"from": "p", "to": "a", "type": "causes", "origin": "inferred"},
-		{"from": "q", "to": "a", "type": "causes", "origin": "inferred"},
-		{"from": "p", "to": "b", "type": "causes", "origin": "inferred"},
-		{"from": "q", "to": "b", "type": "causes", "origin": "inferred"}
+		{"from": "electrification", "to": "charge", "type": "causes", "origin": "inferred"},
+		{"from": "charge", "to": "electroscope", "type": "used_in", "origin": "inferred"},
+		{"from": "current", "to": "ampere", "type": "defines", "origin": "inferred"},
+		{"from": "charge", "to": "current", "type": "explains", "origin": "inferred"},
+		{"from": "electroscope", "to": "law", "type": "causes", "origin": "inferred"}
 	]}`
-	fixed := `{"title": "T", "nodes": [
-		{"slug": "a", "type": "law", "title": "Закон А", "origin": "inferred"},
-		{"slug": "p", "type": "phenomenon", "title": "Явление П", "origin": "inferred"}
-	], "edges": [{"from": "a", "to": "p", "type": "explains", "origin": "inferred"}]}`
-	m := &scripted{replies: map[string][]any{"extract": {broken}, "repair": {fixed}}}
+	m := &scripted{replies: map[string][]any{"extract": {draft}}}
 	res, err := (&Builder{LLM: m}).Build(context.Background(), notes, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(m.tasks(), ","); got != "extract,repair" {
-		t.Errorf("calls = %s", got)
+	if got := strings.Join(m.tasks(), ","); got != "extract" {
+		t.Errorf("calls = %s (no repair or link expected)", got)
 	}
-	if len(res.Graph.Edges) != 1 || res.Graph.Edges[0].Type != domain.EdgeExplains {
-		t.Errorf("graph = %+v", res.Graph)
+	if err := content.Validate(res.Graph); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]domain.EdgeType{
+		"electrification>charge": domain.EdgeDefines,
+		"charge>electroscope":    domain.EdgeExplains,
+		"current>ampere":         domain.EdgeDerives,
+		"charge>current":         domain.EdgeDerives,
+		"law>electroscope":       domain.EdgeExplains, // развёрнута и переименована
+	}
+	got := map[string]domain.EdgeType{}
+	for _, e := range res.Graph.Edges {
+		got[e.From+">"+e.To] = e.Type
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("edge %s = %q, want %q (all: %v)", k, got[k], v, got)
+		}
+	}
+}
+
+func TestEnforceBreaksDefinesCycleFirst(t *testing.T) {
+	g := domain.Graph{
+		Nodes: []domain.Node{{Slug: "f", Type: domain.NodeFormula, Title: "I = q/t"}, {Slug: "i", Type: domain.NodeQuantity, Title: "Сила тока"}},
+		Edges: []domain.Edge{
+			{From: "f", To: "i", Type: domain.EdgeDefines, Origin: domain.OriginExplicit},
+			{From: "i", To: "f", Type: domain.EdgeUsedIn, Origin: domain.OriginInferred},
+		},
+	}
+	out := enforce(g, &Result{})
+	if len(out.Edges) != 1 || out.Edges[0].Type != domain.EdgeUsedIn {
+		t.Errorf("edges = %+v, want only used_in", out.Edges)
 	}
 }
 
@@ -312,5 +342,58 @@ func TestBuildMultiPagePhotos(t *testing.T) {
 	}
 	if pages["ohm"] != 1 || pages["short"] != 2 || len(res.Graph.Edges) != 2 {
 		t.Errorf("pages = %v, edges = %d", pages, len(res.Graph.Edges))
+	}
+}
+
+func TestBuildLinksIsolatedConcepts(t *testing.T) {
+	extract := `{"title": "T", "nodes": [
+		{"slug": "ohm", "type": "law", "title": "Закон Ома", "origin": "inferred"},
+		{"slug": "ohm-f", "type": "formula", "title": "I = U/R", "origin": "inferred"},
+		{"slug": "current", "type": "quantity", "title": "Сила тока", "origin": "inferred"}
+	], "edges": [{"from": "ohm", "to": "ohm-f", "type": "formulates", "origin": "inferred"}]}`
+	link := `{"edges": [{"from": "current", "to": "ohm-f", "type": "used_in", "origin": "inferred", "note": "I входит в формулу"}]}`
+	m := &scripted{replies: map[string][]any{"extract": {extract}, "link": {link}}}
+	res, err := (&Builder{LLM: m}).Build(context.Background(), notes, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(m.tasks(), ","); got != "extract,link" {
+		t.Errorf("calls = %s", got)
+	}
+	if !strings.Contains(m.calls[1].Messages[1].Text, "current (quantity)") || !strings.Contains(m.calls[1].Messages[1].Text, "Текст конспекта") {
+		t.Error("link request should list concepts and include the notes text")
+	}
+	if len(res.Graph.Edges) != 2 {
+		t.Errorf("edges = %+v", res.Graph.Edges)
+	}
+}
+
+func TestConnectivity(t *testing.T) {
+	d := Draft{
+		Nodes: []DraftNode{{Slug: "a"}, {Slug: "b"}, {Slug: "c"}, {Slug: "d"}},
+		Edges: []DraftEdge{{From: "a", To: "b"}, {From: "c", To: "ghost"}},
+	}
+	if iso, parts := connectivity(d); iso != 2 || parts != 3 {
+		t.Errorf("isolated = %d, parts = %d; want 2, 3", iso, parts)
+	}
+}
+
+func TestLinkAcceptsOnlyConnectingEdges(t *testing.T) {
+	d := Draft{
+		Nodes: []DraftNode{{Slug: "a", Type: "law"}, {Slug: "f", Type: "formula"}, {Slug: "q", Type: "quantity"}},
+		Edges: []DraftEdge{{From: "a", To: "f", Type: "formulates"}},
+	}
+	link := `{"edges": [
+		{"from": "a", "to": "f", "type": "formulates"},
+		{"from": "q", "to": "f", "type": "used_in"},
+		{"from": "q", "to": "a", "type": "used_in"},
+		{"from": "ghost", "to": "a", "type": "used_in"}
+	]}`
+	m := &scripted{replies: map[string][]any{"link": {link}}}
+	var res Result
+	(&Builder{LLM: m}).link(context.Background(), &d, document.Document{}, &res)
+	// Принята только q→f: a→f уже есть, q→a соединяет уже соединённое, ghost неизвестен.
+	if len(d.Edges) != 2 || d.Edges[1].From != "q" || d.Edges[1].To != "f" {
+		t.Errorf("edges = %+v", d.Edges)
 	}
 }
