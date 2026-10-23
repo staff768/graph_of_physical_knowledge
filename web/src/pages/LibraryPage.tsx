@@ -62,7 +62,7 @@ export function LibraryPage() {
           <h1 className="page-title">Мои графы</h1>
           <p className="page-lead">Всё, что вы уже связали воедино. Возвращайтесь и углубляйте знания.</p>
         </div>
-        <button className="button primary" onClick={() => navigate('/')}>
+        <button className="button primary" onClick={() => navigate('/new')}>
           <Icon src={icons.plusWhite} size={18} />
           Создать граф
         </button>
@@ -124,7 +124,7 @@ export function LibraryPage() {
         <EmptyState
           title="Здесь появятся ваши графы"
           action={
-            <button className="button primary" onClick={() => navigate('/')}>
+            <button className="button primary" onClick={() => navigate('/new')}>
               <Icon src={icons.plusWhite} size={18} />
               Загрузить конспект
             </button>

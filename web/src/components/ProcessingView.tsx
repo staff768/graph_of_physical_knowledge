@@ -141,7 +141,7 @@ export function FailedView({ meta }: { meta: GraphMeta }) {
           title="Граф не построился"
           action={
             <>
-              <a className="button primary" href="/" onClick={linkClick('/')}>
+              <a className="button primary" href="/new" onClick={linkClick('/new')}>
                 <Icon src={icons.plusWhite} size={18} />
                 Загрузить другой файл
               </a>

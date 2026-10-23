@@ -3,6 +3,7 @@ import { EmptyState } from './components/EmptyState'
 import { Nav } from './components/Nav'
 import { DEMO_GRAPH_ID, graphPath } from './graphs'
 import { HomePage } from './pages/HomePage'
+import { LandingPage } from './pages/LandingPage'
 import { LibraryPage } from './pages/LibraryPage'
 import { linkClick, navigate, useLocation } from './router'
 
@@ -19,7 +20,9 @@ export default function App() {
   }, [])
 
   const graphMatch = path.match(/^\/g\/([a-z0-9-]+)\/?$/)
-  const section = graphMatch || path.startsWith('/graphs') ? 'graphs' : 'home'
+  // Главная — отдельная страница без бокового меню.
+  if (path === '/') return <LandingPage />
+  const section = graphMatch || path.startsWith('/graphs') ? 'graphs' : 'new'
 
   let page
   if (graphMatch)
@@ -29,7 +32,7 @@ export default function App() {
       </Suspense>
     )
   else if (path === '/graphs' || path === '/graphs/') page = <LibraryPage />
-  else if (path === '/') page = <HomePage />
+  else if (path === '/new' || path === '/new/') page = <HomePage />
   else
     page = (
       <div className="page">

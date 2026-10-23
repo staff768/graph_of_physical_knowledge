@@ -5,7 +5,7 @@ import { icons } from '../icons'
 import { linkClick } from '../router'
 import { useTheme, type ThemeChoice } from '../theme'
 
-type Section = 'home' | 'graphs'
+type Section = 'new' | 'graphs'
 
 const themeOptions: { id: ThemeChoice; label: string }[] = [
   { id: 'system', label: 'Авто' },
@@ -69,9 +69,13 @@ export function Nav({ active }: { active: Section }) {
         </div>
 
         <div className="nav-items">
-          <a className={active === 'home' ? 'nav-item active' : 'nav-item'} href="/" onClick={linkClick('/')}>
+          <a className="nav-item" href="/" onClick={linkClick('/')}>
             <Icon src={icons.house} size={19} />
             <span className="nav-label">Главная</span>
+          </a>
+          <a className={active === 'new' ? 'nav-item active' : 'nav-item'} href="/new" onClick={linkClick('/new')}>
+            <Icon src={icons.fileUp} size={19} />
+            <span className="nav-label">Новый граф</span>
           </a>
           <a className={active === 'graphs' ? 'nav-item active' : 'nav-item'} href="/graphs" onClick={linkClick('/graphs')}>
             <Icon src={icons.network} size={19} />
