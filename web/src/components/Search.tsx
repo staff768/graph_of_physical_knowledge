@@ -1,19 +1,37 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, type GraphNode } from '../api'
+import { Icon } from './Icon'
+import { icons } from '../icons'
 import { nodeTypes } from '../meta'
 
-export function Search({ onSelect }: { onSelect: (slug: string) => void }) {
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
+
+export function Search({ graphId, onSelect }: { graphId: string; onSelect: (slug: string) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<GraphNode[]>([])
   const [active, setActive] = useState(0)
   const [open, setOpen] = useState(false)
+
+  // ⌘K / Ctrl+K — быстрый переход к поиску.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        inputRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     const q = query.trim()
     if (!q) return
     const ctrl = new AbortController()
     const t = setTimeout(() => {
-      api.search(q, ctrl.signal)
+      api
+        .search(graphId, q, ctrl.signal)
         .then((r) => {
           setResults(r)
           setActive(0)
@@ -24,19 +42,22 @@ export function Search({ onSelect }: { onSelect: (slug: string) => void }) {
       clearTimeout(t)
       ctrl.abort()
     }
-  }, [query])
+  }, [graphId, query])
 
   const choose = (n: GraphNode) => {
     onSelect(n.slug)
     setQuery('')
     setOpen(false)
+    inputRef.current?.blur()
   }
 
   return (
-    <div className="search">
+    <div className="graph-search">
+      <Icon src={icons.searchSmall} size={16} />
       <input
+        ref={inputRef}
         type="search"
-        placeholder="Поиск: закон Ома, молния, ток…"
+        placeholder="Найти понятие в графе"
         value={query}
         onChange={(e) => {
           setQuery(e.target.value)
@@ -55,10 +76,12 @@ export function Search({ onSelect }: { onSelect: (slug: string) => void }) {
             choose(results[active])
           } else if (e.key === 'Escape') {
             setOpen(false)
+            inputRef.current?.blur()
           }
         }}
-        aria-label="Поиск по графу"
+        aria-label="Найти понятие в графе"
       />
+      <kbd>{isMac ? '⌘ K' : 'Ctrl K'}</kbd>
       {open && query.trim() && (
         <ul className="search-results" role="listbox">
           {results.length === 0 && <li className="muted empty">Ничего не найдено</li>}
@@ -71,7 +94,7 @@ export function Search({ onSelect }: { onSelect: (slug: string) => void }) {
               onMouseDown={() => choose(n)}
               onMouseEnter={() => setActive(i)}
             >
-              <span className="dot" style={{ background: nodeTypes[n.type].color }} />
+              <span className="type-dot" style={{ background: nodeTypes[n.type].color }} />
               <span className="title">{n.title}</span>
               <span className="muted type">{nodeTypes[n.type].label}</span>
             </li>

@@ -16,33 +16,47 @@ import (
 )
 
 type file struct {
-	Section string        `yaml:"section"`
-	Nodes   []domain.Node `yaml:"nodes"`
-	Edges   []domain.Edge `yaml:"edges"`
+	Graph   *domain.GraphMeta `yaml:"graph"`
+	Section string            `yaml:"section"`
+	Nodes   []domain.Node     `yaml:"nodes"`
+	Edges   []domain.Edge     `yaml:"edges"`
+}
+
+// Bundle — граф вместе со сведениями о нём.
+type Bundle struct {
+	Meta  domain.GraphMeta
+	Graph domain.Graph
 }
 
 // LoadDir читает все *.yaml файлы каталога, объединяет их в один граф
-// и валидирует результат.
-func LoadDir(fsys fs.FS, dir string) (domain.Graph, error) {
+// и валидирует результат. Сведения о графе задаются блоком graph: ровно в одном файле.
+func LoadDir(fsys fs.FS, dir string) (Bundle, error) {
 	names, err := fs.Glob(fsys, path.Join(dir, "*.yaml"))
 	if err != nil {
-		return domain.Graph{}, err
+		return Bundle{}, err
 	}
 	if len(names) == 0 {
-		return domain.Graph{}, fmt.Errorf("no *.yaml files in %s", dir)
+		return Bundle{}, fmt.Errorf("no *.yaml files in %s", dir)
 	}
 	sort.Strings(names)
 	var g domain.Graph
+	var meta *domain.GraphMeta
 	for _, name := range names {
 		data, err := fs.ReadFile(fsys, name)
 		if err != nil {
-			return domain.Graph{}, err
+			return Bundle{}, err
 		}
 		var f file
 		dec := yaml.NewDecoder(strings.NewReader(string(data)))
 		dec.KnownFields(true)
 		if err := dec.Decode(&f); err != nil {
-			return domain.Graph{}, fmt.Errorf("%s: %w", name, err)
+			return Bundle{}, fmt.Errorf("%s: %w", name, err)
+		}
+		if f.Graph != nil {
+			if meta != nil {
+				return Bundle{}, fmt.Errorf("%s: graph block is already defined in another file", name)
+			}
+			meta = f.Graph
 		}
 		for _, n := range f.Nodes {
 			if n.Section == "" {
@@ -52,10 +66,16 @@ func LoadDir(fsys fs.FS, dir string) (domain.Graph, error) {
 		}
 		g.Edges = append(g.Edges, f.Edges...)
 	}
-	if err := Validate(g); err != nil {
-		return domain.Graph{}, err
+	if meta == nil {
+		return Bundle{}, fmt.Errorf("no graph block (id, title) in %s", dir)
 	}
-	return g, nil
+	if !slugRe.MatchString(meta.ID) || strings.TrimSpace(meta.Title) == "" {
+		return Bundle{}, fmt.Errorf("graph block: id must be a slug and title must be set")
+	}
+	if err := Validate(g); err != nil {
+		return Bundle{}, err
+	}
+	return Bundle{Meta: *meta, Graph: g}, nil
 }
 
 var slugRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)

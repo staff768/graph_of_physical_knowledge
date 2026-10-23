@@ -11,10 +11,14 @@ import (
 
 // TestRepositoryContent проверяет, что контент из репозитория проходит валидацию.
 func TestRepositoryContent(t *testing.T) {
-	g, err := LoadDir(os.DirFS("../../content"), ".")
+	b, err := LoadDir(os.DirFS("../../content"), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if b.Meta.ID != "demo" || !b.Meta.Demo {
+		t.Errorf("meta = %+v, want demo graph", b.Meta)
+	}
+	g := b.Graph
 	if len(g.Nodes) == 0 || len(g.Edges) == 0 {
 		t.Fatal("content is empty")
 	}
@@ -29,9 +33,27 @@ func TestRepositoryContent(t *testing.T) {
 }
 
 func TestLoadDirRejectsUnknownFields(t *testing.T) {
-	fsys := fstest.MapFS{"a.yaml": {Data: []byte("nodes:\n  - slug: a\n    type: law\n    title: A\n    colour: red\n")}}
+	fsys := fstest.MapFS{"a.yaml": {Data: []byte("graph: {id: g, title: G}\nnodes:\n  - slug: a\n    type: law\n    title: A\n    colour: red\n")}}
 	if _, err := LoadDir(fsys, "."); err == nil {
 		t.Fatal("expected error for unknown field")
+	}
+}
+
+func TestLoadDirGraphBlock(t *testing.T) {
+	node := "nodes:\n  - {slug: a, type: law, title: A}\n"
+	cases := map[string]fstest.MapFS{
+		"missing":   {"a.yaml": {Data: []byte(node)}},
+		"duplicate": {"a.yaml": {Data: []byte("graph: {id: g, title: G}\n" + node)}, "b.yaml": {Data: []byte("graph: {id: h, title: H}\n")}},
+		"bad id":    {"a.yaml": {Data: []byte("graph: {id: Bad Id, title: G}\n" + node)}},
+	}
+	for name, fsys := range cases {
+		if _, err := LoadDir(fsys, "."); err == nil {
+			t.Errorf("%s: expected error", name)
+		}
+	}
+	b, err := LoadDir(fstest.MapFS{"a.yaml": {Data: []byte("graph: {id: g, title: G}\n" + node)}}, ".")
+	if err != nil || b.Meta.ID != "g" || len(b.Graph.Nodes) != 1 {
+		t.Errorf("valid bundle: %+v, %v", b, err)
 	}
 }
 

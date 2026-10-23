@@ -1,10 +1,10 @@
 import type { EdgeType, NodeType } from './api'
 
 export const nodeTypes: Record<NodeType, { label: string; plural: string; color: string; shape: string }> = {
-  law: { label: 'Закон', plural: 'Законы', color: '#2563eb', shape: 'round-rectangle' },
-  quantity: { label: 'Величина', plural: 'Величины', color: '#059669', shape: 'ellipse' },
-  formula: { label: 'Формула', plural: 'Формулы', color: '#d97706', shape: 'rectangle' },
-  phenomenon: { label: 'Явление', plural: 'Явления', color: '#dc2626', shape: 'hexagon' },
+  law: { label: 'Закон', plural: 'Законы', color: '#2858e8', shape: 'round-rectangle' },
+  quantity: { label: 'Величина', plural: 'Величины', color: '#4d7668', shape: 'round-rectangle' },
+  formula: { label: 'Формула', plural: 'Формулы', color: '#b07d2b', shape: 'round-rectangle' },
+  phenomenon: { label: 'Явление', plural: 'Явления', color: '#c0573e', shape: 'round-rectangle' },
 }
 
 export const nodeTypeOrder: NodeType[] = ['law', 'quantity', 'formula', 'phenomenon']

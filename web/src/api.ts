@@ -64,21 +64,48 @@ export interface Explanation {
   graph: Graph
 }
 
+export interface GraphMeta {
+  id: string
+  title: string
+  section: string
+  source: string
+  demo: boolean
+  createdAt: string
+  nodeCount: number
+  edgeCount: number
+  // Самые связанные понятия — для превью карточки (только в списке графов).
+  preview?: string[]
+}
+
+export interface GraphData extends Graph {
+  meta: GraphMeta
+}
+
+export class ApiError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(path, { signal })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw new Error(body.error ?? `HTTP ${res.status}`)
+    throw new ApiError(res.status, body.error ?? `HTTP ${res.status}`)
   }
   return res.json() as Promise<T>
 }
 
+const enc = encodeURIComponent
+const graphBase = (id: string) => `/api/graphs/${enc(id)}`
+
 export const api = {
-  graph: (signal?: AbortSignal) => get<Graph>('/api/graph', signal),
-  node: (slug: string, signal?: AbortSignal) =>
-    get<NodeDetails>(`/api/nodes/${encodeURIComponent(slug)}`, signal),
-  chain: (slug: string, signal?: AbortSignal) =>
-    get<Explanation>(`/api/nodes/${encodeURIComponent(slug)}/chain`, signal),
-  search: (q: string, signal?: AbortSignal) =>
-    get<GraphNode[]>(`/api/search?q=${encodeURIComponent(q)}`, signal),
+  graphs: (q = '', signal?: AbortSignal) => get<GraphMeta[]>(`/api/graphs${q ? `?q=${enc(q)}` : ''}`, signal),
+  graph: (id: string, signal?: AbortSignal) => get<GraphData>(graphBase(id), signal),
+  node: (id: string, slug: string, signal?: AbortSignal) => get<NodeDetails>(`${graphBase(id)}/nodes/${enc(slug)}`, signal),
+  chain: (id: string, slug: string, signal?: AbortSignal) =>
+    get<Explanation>(`${graphBase(id)}/nodes/${enc(slug)}/chain`, signal),
+  search: (id: string, q: string, signal?: AbortSignal) => get<GraphNode[]>(`${graphBase(id)}/search?q=${enc(q)}`, signal),
 }

@@ -22,11 +22,13 @@ import (
 // Store — то, что API требует от хранилища.
 type Store interface {
 	Ping(ctx context.Context) error
-	Graph(ctx context.Context) (domain.Graph, error)
-	Node(ctx context.Context, slug string) (domain.Node, error)
-	Neighbors(ctx context.Context, slug string) (incoming, outgoing []domain.Link, err error)
-	Ancestors(ctx context.Context, slug string) (domain.Graph, error)
-	Search(ctx context.Context, query string, limit int) ([]domain.Node, error)
+	ListGraphs(ctx context.Context, query string) ([]domain.GraphMeta, error)
+	GraphMeta(ctx context.Context, graphID string) (domain.GraphMeta, error)
+	Graph(ctx context.Context, graphID string) (domain.Graph, error)
+	Node(ctx context.Context, graphID, slug string) (domain.Node, error)
+	Neighbors(ctx context.Context, graphID, slug string) (incoming, outgoing []domain.Link, err error)
+	Ancestors(ctx context.Context, graphID, slug string) (domain.Graph, error)
+	Search(ctx context.Context, graphID, query string, limit int) ([]domain.Node, error)
 }
 
 type handler struct {
@@ -44,10 +46,14 @@ func New(store Store, log *slog.Logger, static fs.FS) http.Handler {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", h.health)
-		r.Get("/graph", h.graph)
-		r.Get("/search", h.search)
-		r.Get("/nodes/{slug}", h.node)
-		r.Get("/nodes/{slug}/chain", h.chain)
+		r.Get("/graphs", h.listGraphs)
+		r.Route("/graphs/{graphID}", func(r chi.Router) {
+			r.Use(h.requireGraph)
+			r.Get("/", h.graph)
+			r.Get("/search", h.search)
+			r.Get("/nodes/{slug}", h.node)
+			r.Get("/nodes/{slug}/chain", h.chain)
+		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not found")
 		})
@@ -70,6 +76,28 @@ func (h *handler) logRequests(next http.Handler) http.Handler {
 	})
 }
 
+type graphMetaKey struct{}
+
+// requireGraph отвечает 404, если графа нет, и кладёт его сведения в контекст запроса.
+func (h *handler) requireGraph(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		meta, err := h.store.GraphMeta(r.Context(), chi.URLParam(r, "graphID"))
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "graph not found")
+			return
+		}
+		if err != nil {
+			h.internalError(w, err)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), graphMetaKey{}, meta)))
+	})
+}
+
+func graphFrom(r *http.Request) domain.GraphMeta {
+	return r.Context().Value(graphMetaKey{}).(domain.GraphMeta)
+}
+
 func (h *handler) health(w http.ResponseWriter, r *http.Request) {
 	if err := h.store.Ping(r.Context()); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "database unavailable")
@@ -78,13 +106,28 @@ func (h *handler) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (h *handler) graph(w http.ResponseWriter, r *http.Request) {
-	g, err := h.store.Graph(r.Context())
+func (h *handler) listGraphs(w http.ResponseWriter, r *http.Request) {
+	graphs, err := h.store.ListGraphs(r.Context(), r.URL.Query().Get("q"))
 	if err != nil {
 		h.internalError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, g)
+	writeJSON(w, http.StatusOK, graphs)
+}
+
+type graphResponse struct {
+	Meta domain.GraphMeta `json:"meta"`
+	domain.Graph
+}
+
+func (h *handler) graph(w http.ResponseWriter, r *http.Request) {
+	meta := graphFrom(r)
+	g, err := h.store.Graph(r.Context(), meta.ID)
+	if err != nil {
+		h.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, graphResponse{Meta: meta, Graph: g})
 }
 
 type nodeResponse struct {
@@ -94,8 +137,8 @@ type nodeResponse struct {
 }
 
 func (h *handler) node(w http.ResponseWriter, r *http.Request) {
-	slug := chi.URLParam(r, "slug")
-	node, err := h.store.Node(r.Context(), slug)
+	graphID, slug := graphFrom(r).ID, chi.URLParam(r, "slug")
+	node, err := h.store.Node(r.Context(), graphID, slug)
 	if errors.Is(err, storage.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "node not found")
 		return
@@ -104,7 +147,7 @@ func (h *handler) node(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, err)
 		return
 	}
-	incoming, outgoing, err := h.store.Neighbors(r.Context(), slug)
+	incoming, outgoing, err := h.store.Neighbors(r.Context(), graphID, slug)
 	if err != nil {
 		h.internalError(w, err)
 		return
@@ -114,7 +157,7 @@ func (h *handler) node(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) chain(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	sub, err := h.store.Ancestors(r.Context(), slug)
+	sub, err := h.store.Ancestors(r.Context(), graphFrom(r).ID, slug)
 	if errors.Is(err, storage.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "node not found")
 		return
@@ -137,7 +180,7 @@ func (h *handler) search(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, []domain.Node{})
 		return
 	}
-	nodes, err := h.store.Search(r.Context(), q, 20)
+	nodes, err := h.store.Search(r.Context(), graphFrom(r).ID, q, 20)
 	if err != nil {
 		h.internalError(w, err)
 		return

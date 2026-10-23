@@ -1,4 +1,5 @@
-// Команда seed валидирует контент из YAML и полностью заменяет им граф в БД.
+// Команда seed валидирует контент из YAML и создаёт или полностью заменяет
+// этот граф в БД (остальные графы не затрагиваются).
 //
 //	go run ./cmd/seed               # загрузить content/*.yaml в БД
 //	go run ./cmd/seed -check        # только проверить контент
@@ -26,11 +27,11 @@ func run() error {
 	check := flag.Bool("check", false, "only validate content, do not touch the database")
 	flag.Parse()
 
-	g, err := content.LoadDir(os.DirFS(*dir), ".")
+	b, err := content.LoadDir(os.DirFS(*dir), ".")
 	if err != nil {
 		return err
 	}
-	fmt.Printf("content OK: %d nodes, %d edges\n", len(g.Nodes), len(g.Edges))
+	fmt.Printf("content OK: graph %q, %d nodes, %d edges\n", b.Meta.ID, len(b.Graph.Nodes), len(b.Graph.Edges))
 	if *check {
 		return nil
 	}
@@ -48,9 +49,9 @@ func run() error {
 	if err := store.Migrate(ctx); err != nil {
 		return err
 	}
-	if err := store.ReplaceGraph(ctx, g); err != nil {
+	if err := store.ReplaceGraph(ctx, b.Meta, b.Graph); err != nil {
 		return err
 	}
-	fmt.Println("database seeded")
+	fmt.Printf("graph %q seeded\n", b.Meta.ID)
 	return nil
 }

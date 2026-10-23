@@ -1,6 +1,8 @@
 // Package domain описывает сущности графа физических знаний.
 package domain
 
+import "time"
+
 // NodeType — тип узла графа.
 type NodeType string
 
@@ -61,6 +63,20 @@ type Edge struct {
 	To          string   `json:"to"`
 	Type        EdgeType `json:"type"`
 	Description string   `json:"description,omitempty"`
+}
+
+// GraphMeta — сведения о графе для библиотеки.
+type GraphMeta struct {
+	ID        string    `json:"id" yaml:"id"`
+	Title     string    `json:"title" yaml:"title"`
+	Section   string    `json:"section" yaml:"section"`
+	Source    string    `json:"source" yaml:"source"`
+	Demo      bool      `json:"demo" yaml:"demo"`
+	CreatedAt time.Time `json:"createdAt" yaml:"-"`
+	NodeCount int       `json:"nodeCount" yaml:"-"`
+	EdgeCount int       `json:"edgeCount" yaml:"-"`
+	// Preview — несколько самых связанных понятий графа для превью на карточке.
+	Preview []string `json:"preview" yaml:"-"`
 }
 
 // Link — связь узла с соседом, вместе с краткими данными соседа.
