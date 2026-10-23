@@ -247,3 +247,33 @@ func TestStubOnRealNotes(t *testing.T) {
 		t.Errorf("nodes = %d, explicit = %d", len(res.Graph.Nodes), explicit)
 	}
 }
+
+func TestBuildAsksModelWhenGraphIsBadlyBroken(t *testing.T) {
+	// Четыре недопустимые связи — больше, чем исправляется на месте.
+	broken := `{"title": "T", "nodes": [
+		{"slug": "a", "type": "law", "title": "Закон А", "origin": "inferred"},
+		{"slug": "b", "type": "law", "title": "Закон Б", "origin": "inferred"},
+		{"slug": "p", "type": "phenomenon", "title": "Явление П", "origin": "inferred"},
+		{"slug": "q", "type": "phenomenon", "title": "Явление Q", "origin": "inferred"}
+	], "edges": [
+		{"from": "p", "to": "a", "type": "causes", "origin": "inferred"},
+		{"from": "q", "to": "a", "type": "causes", "origin": "inferred"},
+		{"from": "p", "to": "b", "type": "causes", "origin": "inferred"},
+		{"from": "q", "to": "b", "type": "causes", "origin": "inferred"}
+	]}`
+	fixed := `{"title": "T", "nodes": [
+		{"slug": "a", "type": "law", "title": "Закон А", "origin": "inferred"},
+		{"slug": "p", "type": "phenomenon", "title": "Явление П", "origin": "inferred"}
+	], "edges": [{"from": "a", "to": "p", "type": "explains", "origin": "inferred"}]}`
+	m := &scripted{replies: map[string][]any{"extract": {broken}, "repair": {fixed}}}
+	res, err := (&Builder{LLM: m}).Build(context.Background(), notes, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(m.tasks(), ","); got != "extract,repair" {
+		t.Errorf("calls = %s", got)
+	}
+	if len(res.Graph.Edges) != 1 || res.Graph.Edges[0].Type != domain.EdgeExplains {
+		t.Errorf("graph = %+v", res.Graph)
+	}
+}

@@ -24,6 +24,14 @@ import (
 	"graph_of_physical_knowledge/internal/llm"
 )
 
+// maxLocalFixes — сколько ошибок проверки исправляется без повторного запроса к модели.
+const maxLocalFixes = 3
+
+// problems — число ошибок проверки (Validate объединяет их через errors.Join, по одной на строку).
+func problems(err error) int {
+	return strings.Count(err.Error(), "\n") + 1
+}
+
 // ErrNoPhysics — модель не нашла в конспекте физических понятий.
 var ErrNoPhysics = errors.New("no physics concepts found")
 
@@ -130,11 +138,16 @@ func (b *Builder) Build(ctx context.Context, doc document.Document, progress Pro
 	progress(StageLinking, fmt.Sprintf("найдено %d %s, проверяю связи", len(draft.Nodes), plural(len(draft.Nodes), "понятие", "понятия", "понятий")))
 	ground(&draft, doc, &res)
 	g := b.toGraph(&draft, &res)
-	if err := content.Validate(g); err != nil {
+	if err := content.Validate(g); err != nil && problems(err) <= maxLocalFixes {
+		// Несколько ошибок дешевле исправить на месте, чем заново генерировать весь граф моделью.
+		res.Fixes = append(res.Fixes, "граф исправлен без модели: "+truncateRunes(err.Error(), 300))
+		g = enforce(g, &res)
+	} else if err != nil {
 		b.log().Info("graph needs repair", "err", err)
 		payload, _ := json.Marshal(draft)
 		var fixed Draft
 		user := "Граф:\n" + string(payload) + "\n\nОшибки проверки:\n" + err.Error()
+		res.Fixes = append(res.Fixes, "граф отправлен модели на исправление: "+truncateRunes(err.Error(), 300))
 		if askErr := b.ask(ctx, &res, "repair", repairPrompt, user, nil, &fixed); askErr == nil && len(fixed.Nodes) > 0 {
 			ground(&fixed, doc, &res)
 			draft = fixed
@@ -218,8 +231,10 @@ func (b *Builder) ask(ctx context.Context, res *Result, task, system, user strin
 			{Role: "system", Text: system},
 			{Role: "user", Text: user, Images: images},
 		},
-		JSON:        true,
-		MaxTokens:   8000,
+		JSON: true,
+		// С большим запасом: сам граф — около 7 тыс. токенов, а «думающие» модели ещё
+		// столько же тратят на рассуждения. Оплачиваются только потраченные токены.
+		MaxTokens:   32000,
 		Temperature: 0.1,
 	}
 	var resp llm.Response
@@ -244,6 +259,10 @@ func (b *Builder) ask(ctx context.Context, res *Result, task, system, user strin
 	}
 	res.Usage.InputTokens += resp.Usage.InputTokens
 	res.Usage.OutputTokens += resp.Usage.OutputTokens
+	if resp.Truncated {
+		return fmt.Errorf("%s: ответ модели оборвался на лимите токенов (%d на выходе): уменьшите ChunkRunes или LLM_REASONING_EFFORT",
+			task, resp.Usage.OutputTokens)
+	}
 	if err := parseJSON(resp.Text, out); err != nil {
 		return fmt.Errorf("%s: model returned invalid JSON: %w", task, err)
 	}
@@ -516,12 +535,21 @@ func onCycle(cycle []string, e domain.Edge) bool {
 // checkPhysics отмечает узлы с вероятными ошибками в формулах. Сбой проверки
 // не ломает построение графа: граф полезен и без неё.
 func (b *Builder) checkPhysics(ctx context.Context, g *domain.Graph, res *Result) {
+	// Модель при извлечении иногда молча исправляет формулу из конспекта, поэтому
+	// проверяется прежде всего цитата — то, что записано в конспекте на самом деле.
 	var sb strings.Builder
 	for _, n := range g.Nodes {
-		if n.Formula == "" || n.Type == domain.NodeQuantity {
+		if n.Type == domain.NodeQuantity || (n.Formula == "" && !strings.Contains(n.SourceQuote, "=")) {
 			continue
 		}
-		fmt.Fprintf(&sb, "- %s (%s): %s — %s\n", n.Slug, n.Title, n.Formula, n.Summary)
+		fmt.Fprintf(&sb, "- %s (%s)", n.Slug, n.Title)
+		if n.SourceQuote != "" {
+			fmt.Fprintf(&sb, "; в конспекте записано: «%s»", n.SourceQuote)
+		}
+		if n.Formula != "" {
+			fmt.Fprintf(&sb, "; формула в графе: %s", n.Formula)
+		}
+		sb.WriteString("\n")
 	}
 	if sb.Len() == 0 {
 		return
@@ -543,6 +571,14 @@ func (b *Builder) checkPhysics(ctx context.Context, g *domain.Graph, res *Result
 			}
 		}
 	}
+}
+
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 func plural(n int, one, few, many string) string {

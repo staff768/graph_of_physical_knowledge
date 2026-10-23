@@ -17,7 +17,11 @@ type OpenAI struct {
 	BaseURL string
 	APIKey  string
 	Model   string
-	HTTP    *http.Client
+	// ReasoningEffort — рассуждения «думающих» моделей: off (выключить), low, medium, high.
+	// Пусто — не передаётся, решает провайдер. Рассуждения расходуют лимит токенов ответа.
+	// Формат параметра — как у OpenRouter и совместимых агрегаторов (ProxyAPI).
+	ReasoningEffort string
+	HTTP            *http.Client
 }
 
 func (c *OpenAI) Name() string { return "openai-compatible/" + c.Model }
@@ -45,6 +49,12 @@ type oaRequest struct {
 	ResponseFormat *struct {
 		Type string `json:"type"`
 	} `json:"response_format,omitempty"`
+	Reasoning *oaReasoning `json:"reasoning,omitempty"`
+}
+
+type oaReasoning struct {
+	Effort  string `json:"effort,omitempty"`
+	Enabled *bool  `json:"enabled,omitempty"`
 }
 
 type oaResponse struct {
@@ -79,6 +89,14 @@ func (c *OpenAI) Complete(ctx context.Context, req Request) (Response, error) {
 			Type string `json:"type"`
 		}{Type: "json_object"}
 	}
+	switch c.ReasoningEffort {
+	case "":
+	case "off":
+		disabled := false
+		body.Reasoning = &oaReasoning{Enabled: &disabled}
+	default:
+		body.Reasoning = &oaReasoning{Effort: c.ReasoningEffort}
+	}
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return Response{}, err
@@ -111,8 +129,9 @@ func (c *OpenAI) Complete(ctx context.Context, req Request) (Response, error) {
 		return Response{}, fmt.Errorf("llm: empty response")
 	}
 	return Response{
-		Text:  out.Choices[0].Message.Content,
-		Usage: Usage{InputTokens: out.Usage.PromptTokens, OutputTokens: out.Usage.CompletionTokens},
+		Text:      out.Choices[0].Message.Content,
+		Usage:     Usage{InputTokens: out.Usage.PromptTokens, OutputTokens: out.Usage.CompletionTokens},
+		Truncated: out.Choices[0].FinishReason == "length",
 	}, nil
 }
 

@@ -41,6 +41,8 @@ type Usage struct {
 type Response struct {
 	Text  string
 	Usage Usage
+	// Truncated — ответ оборвался на лимите токенов (finish_reason = length).
+	Truncated bool
 }
 
 // Client — языковая модель.
@@ -61,10 +63,11 @@ func FromEnv() (Client, error) {
 		return nil, ErrNotConfigured
 	case "openai":
 		c := &OpenAI{
-			BaseURL: os.Getenv("LLM_BASE_URL"),
-			APIKey:  os.Getenv("LLM_API_KEY"),
-			Model:   os.Getenv("LLM_MODEL"),
-			HTTP:    httpClient,
+			BaseURL:         os.Getenv("LLM_BASE_URL"),
+			APIKey:          os.Getenv("LLM_API_KEY"),
+			Model:           os.Getenv("LLM_MODEL"),
+			ReasoningEffort: os.Getenv("LLM_REASONING_EFFORT"),
+			HTTP:            httpClient,
 		}
 		if c.BaseURL == "" || c.APIKey == "" || c.Model == "" {
 			return nil, fmt.Errorf("LLM_BASE_URL, LLM_API_KEY and LLM_MODEL must be set: %w", ErrNotConfigured)

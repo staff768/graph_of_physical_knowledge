@@ -88,8 +88,11 @@ var allowedEdges = map[domain.EdgeType][][2]domain.NodeType{
 	domain.EdgeExplains: {
 		{domain.NodeLaw, domain.NodePhenomenon}, {domain.NodeFormula, domain.NodePhenomenon},
 	},
-	domain.EdgeCauses:  {{domain.NodePhenomenon, domain.NodePhenomenon}},
-	domain.EdgeDefines: {{domain.NodeLaw, domain.NodeQuantity}, {domain.NodeFormula, domain.NodeQuantity}},
+	domain.EdgeCauses: {{domain.NodePhenomenon, domain.NodePhenomenon}},
+	domain.EdgeDefines: {
+		{domain.NodeLaw, domain.NodeQuantity}, {domain.NodeFormula, domain.NodeQuantity},
+		{domain.NodePhenomenon, domain.NodeQuantity}, // явление вводит величину: ток → сила тока
+	},
 }
 
 // Validate проверяет целостность графа: корректность slug и типов,

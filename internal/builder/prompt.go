@@ -16,7 +16,7 @@ const extractPrompt = `Ты — методист по физике. По кон�
 - derives: formula → formula, law → law (одно выводится из другого);
 - explains: law → phenomenon, formula → phenomenon (объясняет явление);
 - causes: phenomenon → phenomenon (одно явление вызывает другое);
-- defines: law → quantity, formula → quantity (вводит величину).
+- defines: law → quantity, formula → quantity, phenomenon → quantity (вводит величину).
 Циклов быть не должно.
 
 Происхождение (origin):
@@ -28,6 +28,7 @@ const extractPrompt = `Ты — методист по физике. По кон�
 - title и summary — по-русски; summary — одно понятное школьнику предложение;
 - formula и unit — в LaTeX (I = \dfrac{U}{R}; \text{Ом}); у величины formula — её обозначение (R);
 - если формула в конспекте записана с ошибкой, переноси её как есть — проверка будет отдельно;
+- для каждой формулы заведи узлы всех величин, которые в неё входят (quantity), и свяжи их с формулой через used_in;
 - каждый узел должен быть связан хотя бы с одним другим;
 - не дублируй понятия: одна величина — один узел.
 
@@ -44,10 +45,12 @@ const knownNodesIntro = `Эти понятия уже найдены в пред
 const repairPrompt = `Ты исправляешь граф знаний по физике. Ниже — граф в JSON и список ошибок проверки.
 Исправь только ошибки: поменяй тип связи или её направление, удали лишнюю связь, разорви цикл.
 Допустимые связи: formulates (law→formula), used_in (quantity→formula|law), derives (formula→formula, law→law),
-explains (law|formula→phenomenon), causes (phenomenon→phenomenon), defines (law|formula→quantity).
+explains (law|formula→phenomenon), causes (phenomenon→phenomenon), defines (law|formula|phenomenon→quantity).
 Ответь ОДНИМ JSON-объектом той же структуры (title, section, nodes, edges), без пояснений.`
 
 const checkPrompt = `Ты — учитель физики. Проверь формулы и законы из конспекта школьника.
+Для каждого понятия дано, что записано в конспекте, и формула в графе. Проверяй прежде всего запись в конспекте:
+если она ошибочна, сообщи об этом, даже если формула в графе уже верная.
 Найди только явные ошибки в формулах (пропущенный квадрат, перепутанные величины, неверная зависимость).
 Не придирайся к записи и обозначениям. Если ошибок нет — верни пустой список.
 Ответь ОДНИМ JSON-объектом: {"issues": [{"slug": "slug узла", "issue": "Возможно, в конспекте ошибка: записано …, а должно быть …"}]}`

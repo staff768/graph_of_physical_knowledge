@@ -185,8 +185,9 @@ func (c *GigaChat) Complete(ctx context.Context, req Request) (Response, error) 
 		return Response{}, fmt.Errorf("gigachat: empty response")
 	}
 	return Response{
-		Text:  out.Choices[0].Message.Content,
-		Usage: Usage{InputTokens: out.Usage.PromptTokens, OutputTokens: out.Usage.CompletionTokens},
+		Text:      out.Choices[0].Message.Content,
+		Usage:     Usage{InputTokens: out.Usage.PromptTokens, OutputTokens: out.Usage.CompletionTokens},
+		Truncated: out.Choices[0].FinishReason == "length",
 	}, nil
 }
 
