@@ -1,9 +1,12 @@
 name: CI
 
 on:
+  # Пуш в любую ветку, PR и ручной запуск со вкладки Actions.
+  # Повторный пуш в ту же ветку отменяет предыдущий запуск (см. concurrency).
   push:
-    branches: [main, master]
   pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
