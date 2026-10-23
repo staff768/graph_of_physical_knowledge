@@ -96,8 +96,11 @@ func (s *Store) ReplaceGraph(ctx context.Context, meta domain.GraphMeta, g domai
 
 // replaceContent заменяет узлы и связи графа внутри транзакции.
 func replaceContent(ctx context.Context, tx pgx.Tx, graphID string, g domain.Graph) error {
-	// Связи удалятся каскадно вместе с узлами.
+	// Связи удалятся каскадно вместе с узлами; рассказы по старому графу больше не верны.
 	if _, err := tx.Exec(ctx, `DELETE FROM nodes WHERE graph_id = $1`, graphID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM stories WHERE graph_id = $1`, graphID); err != nil {
 		return err
 	}
 	ids := make(map[string]int64, len(g.Nodes))
@@ -495,4 +498,23 @@ func (s *Store) Search(ctx context.Context, graphID, query string, limit int) ([
 
 func escapeLike(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
+// Story возвращает сохранённый рассказ по цепочке узла или ErrNotFound.
+func (s *Store) Story(ctx context.Context, graphID, slug string) (string, error) {
+	var text string
+	err := s.pool.QueryRow(ctx, `SELECT text FROM stories WHERE graph_id = $1 AND slug = $2`, graphID, slug).Scan(&text)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return text, err
+}
+
+// SaveStory сохраняет рассказ по цепочке узла (заменяя прежний).
+func (s *Store) SaveStory(ctx context.Context, graphID, slug, text, model string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO stories (graph_id, slug, text, model) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (graph_id, slug) DO UPDATE SET text = EXCLUDED.text, model = EXCLUDED.model, created_at = now()`,
+		graphID, slug, text, model)
+	return err
 }

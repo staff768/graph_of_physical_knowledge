@@ -122,6 +122,15 @@ export const api = {
   node: (id: string, slug: string, signal?: AbortSignal) => get<NodeDetails>(`${graphBase(id)}/nodes/${enc(slug)}`, signal),
   chain: (id: string, slug: string, signal?: AbortSignal) =>
     get<Explanation>(`${graphBase(id)}/nodes/${enc(slug)}/chain`, signal),
+  // Связный рассказ модели по цепочке: GET — только сохранённый (404, если нет), POST — написать.
+  story: (id: string, slug: string, signal?: AbortSignal) =>
+    get<{ text: string }>(`${graphBase(id)}/nodes/${enc(slug)}/story`, signal),
+  tellStory: async (id: string, slug: string, signal?: AbortSignal): Promise<{ text: string }> => {
+    const res = await fetch(`${graphBase(id)}/nodes/${enc(slug)}/story`, { method: 'POST', signal })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) throw new ApiError(res.status, body.error ?? `HTTP ${res.status}`)
+    return body
+  },
   search: (id: string, q: string, signal?: AbortSignal) => get<GraphNode[]>(`${graphBase(id)}/search?q=${enc(q)}`, signal),
   deleteGraph: async (id: string): Promise<void> => {
     const res = await fetch(graphBase(id), { method: 'DELETE' })

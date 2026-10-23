@@ -36,15 +36,21 @@ type handler struct {
 	store   Store
 	log     *slog.Logger
 	uploads *Uploads
+	stories *Stories
 }
 
 // New собирает роутер. Если static не nil, он раздаётся как SPA:
-// неизвестные пути вне /api отдают index.html. uploads == nil выключает загрузку конспектов.
-func New(store Store, log *slog.Logger, static fs.FS, uploads *Uploads) http.Handler {
+// неизвестные пути вне /api отдают index.html. uploads == nil выключает загрузку конспектов,
+// stories == nil — рассказы моделью.
+func New(store Store, log *slog.Logger, static fs.FS, uploads *Uploads, stories *Stories) http.Handler {
 	if uploads != nil {
 		uploads.limiter = newLimiter(uploads.PerHour, time.Hour)
 	}
-	h := &handler{store: store, log: log, uploads: uploads}
+	if stories != nil {
+		stories.limiter = newLimiter(stories.PerHour, time.Hour)
+		stories.inflight = map[string]*storyCall{}
+	}
+	h := &handler{store: store, log: log, uploads: uploads, stories: stories}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
 	r.Use(h.logRequests)
@@ -52,6 +58,8 @@ func New(store Store, log *slog.Logger, static fs.FS, uploads *Uploads) http.Han
 	r.Route("/api", func(r chi.Router) {
 		// Загрузка файла до 25 МБ может идти дольше обычного запроса.
 		r.With(middleware.Timeout(2*time.Minute)).Post("/graphs", h.upload)
+		// Модель пишет рассказ 10–30 секунд.
+		r.With(middleware.Timeout(storyTimeout+10*time.Second), h.requireGraph).Post("/graphs/{graphID}/nodes/{slug}/story", h.tellStory)
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Timeout(15 * time.Second))
 			r.Get("/health", h.health)
@@ -63,6 +71,7 @@ func New(store Store, log *slog.Logger, static fs.FS, uploads *Uploads) http.Han
 				r.Get("/search", h.search)
 				r.Get("/nodes/{slug}", h.node)
 				r.Get("/nodes/{slug}/chain", h.chain)
+				r.Get("/nodes/{slug}/story", h.story)
 			})
 		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
@@ -232,12 +241,19 @@ func spaHandler(static fs.FS) http.Handler {
 	files := http.FileServerFS(static)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, "/")
-		if name != "" {
+		if name != "" && name != "index.html" {
 			if _, err := fs.Stat(static, name); err == nil {
+				// В именах файлов из assets/ есть хэш содержимого — их можно кэшировать навсегда.
+				if strings.HasPrefix(name, "assets/") {
+					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				}
 				files.ServeHTTP(w, r)
 				return
 			}
 		}
+		// index.html браузер должен перепроверять каждый раз, иначе после обновления
+		// он грузит старые скрипты и новых возможностей не видно.
+		w.Header().Set("Cache-Control", "no-cache")
 		http.ServeFileFS(w, r, static, "index.html")
 	})
 }

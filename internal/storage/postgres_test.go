@@ -333,3 +333,28 @@ func TestDeleteGraph(t *testing.T) {
 		t.Errorf("test-a nodes = %d", len(g.Nodes))
 	}
 }
+
+func TestStories(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if _, err := s.Story(ctx, "test-a", "x"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing story: %v", err)
+	}
+	if err := s.SaveStory(ctx, "test-a", "x", "первый", "m"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveStory(ctx, "test-a", "x", "второй", "m"); err != nil {
+		t.Fatal(err)
+	}
+	if text, err := s.Story(ctx, "test-a", "x"); err != nil || text != "второй" {
+		t.Errorf("story = %q, %v", text, err)
+	}
+	// Перестройка графа сбрасывает рассказы.
+	g, _ := s.Graph(ctx, "test-a")
+	if err := s.ReplaceGraph(ctx, domain.GraphMeta{ID: "test-a", Title: "A"}, g); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Story(ctx, "test-a", "x"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("story after replace: %v", err)
+	}
+}

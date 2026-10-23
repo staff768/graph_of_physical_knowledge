@@ -20,6 +20,7 @@ import (
 	"graph_of_physical_knowledge/internal/httpapi"
 	"graph_of_physical_knowledge/internal/llm"
 	"graph_of_physical_knowledge/internal/storage"
+	"graph_of_physical_knowledge/internal/story"
 	"graph_of_physical_knowledge/internal/worker"
 )
 
@@ -46,7 +47,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	uploads, err := startWorker(ctx, store, log)
+	uploads, stories, err := startWorker(ctx, store, log)
 	if err != nil {
 		return err
 	}
@@ -60,7 +61,7 @@ func run(log *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:              env("HTTP_ADDR", ":8080"),
-		Handler:           httpapi.New(store, log, static, uploads),
+		Handler:           httpapi.New(store, log, static, uploads, stories),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	errCh := make(chan error, 1)
@@ -84,15 +85,15 @@ func run(log *slog.Logger) error {
 }
 
 // startWorker запускает построение графов по конспектам, если настроена языковая модель.
-// Без модели приложение работает, но загрузка конспектов выключена.
-func startWorker(ctx context.Context, store *storage.Store, log *slog.Logger) (*httpapi.Uploads, error) {
+// и рассказы по цепочкам. Без модели приложение работает, но обе возможности выключены.
+func startWorker(ctx context.Context, store *storage.Store, log *slog.Logger) (*httpapi.Uploads, *httpapi.Stories, error) {
 	client, err := llm.FromEnv()
 	if errors.Is(err, llm.ErrNotConfigured) {
-		log.Warn("загрузка конспектов выключена: языковая модель не настроена (см. .env.example)", "reason", err)
-		return nil, nil
+		log.Warn("загрузка конспектов и рассказы выключены: языковая модель не настроена (см. .env.example)", "reason", err)
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	b := &builder.Builder{LLM: client, Log: log, CheckPhysics: env("LLM_CHECK_PHYSICS", "true") == "true"}
 	w := worker.New(store, b, log)
@@ -100,9 +101,15 @@ func startWorker(ctx context.Context, store *storage.Store, log *slog.Logger) (*
 	log.Info("построение графов включено", "model", client.Name())
 	perHour, err := strconv.Atoi(env("UPLOADS_PER_HOUR", "10"))
 	if err != nil {
-		return nil, fmt.Errorf("UPLOADS_PER_HOUR: %w", err)
+		return nil, nil, fmt.Errorf("UPLOADS_PER_HOUR: %w", err)
 	}
-	return &httpapi.Uploads{Store: store, Notify: w.Notify, PerHour: perHour}, nil
+	storiesPerHour, err := strconv.Atoi(env("STORIES_PER_HOUR", "60"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("STORIES_PER_HOUR: %w", err)
+	}
+	uploads := &httpapi.Uploads{Store: store, Notify: w.Notify, PerHour: perHour}
+	stories := &httpapi.Stories{Store: store, Teller: &story.Teller{LLM: client}, Model: client.Name(), PerHour: storiesPerHour}
+	return uploads, stories, nil
 }
 
 func env(key, def string) string {

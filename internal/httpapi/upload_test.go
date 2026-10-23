@@ -73,7 +73,7 @@ func postFiles(t *testing.T, h http.Handler, parts ...part) (int, map[string]any
 }
 
 func TestUploadDisabled(t *testing.T) {
-	h := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
+	h := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil)
 	if code, _ := postFile(t, h, "a.txt", []byte("Закон Ома")); code != http.StatusServiceUnavailable {
 		t.Errorf("code = %d, want 503", code)
 	}
@@ -84,7 +84,7 @@ func TestUpload(t *testing.T) {
 	notified := 0
 	h := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, &Uploads{
 		Store: store, Notify: func() { notified++ }, PerHour: 2,
-	})
+	}, nil)
 
 	code, body := postFile(t, h, "Механика_лекция_03.txt", []byte("Второй закон Ньютона: F = ma"))
 	if code != http.StatusAccepted {
@@ -147,7 +147,7 @@ func TestTitleFromFilename(t *testing.T) {
 
 func TestUploadSeveralPhotos(t *testing.T) {
 	store := newFakeUploads()
-	h := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, &Uploads{Store: store, PerHour: 10})
+	h := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, &Uploads{Store: store, PerHour: 10}, nil)
 	png := []byte("\x89PNG\r\n\x1a\n" + strings.Repeat("\x00", 32))
 	jpg := []byte("\xff\xd8\xff\xe0" + strings.Repeat("\x00", 32))
 

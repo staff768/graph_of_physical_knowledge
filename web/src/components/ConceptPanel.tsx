@@ -1,4 +1,5 @@
-import type { Explanation, GraphNode, Link, NodeDetails, Step } from '../api'
+import { useEffect, useState } from 'react'
+import { api, ApiError, type Explanation, type GraphNode, type Link, type NodeDetails, type Step } from '../api'
 import { Icon } from './Icon'
 import { icons } from '../icons'
 import { featured, nodeTypes } from '../meta'
@@ -14,6 +15,7 @@ export interface Consequence {
 }
 
 interface Props {
+  graphId: string
   nodes: Map<string, GraphNode>
   // Имя исходного файла — для подписи под цитатой.
   source?: string
@@ -234,7 +236,7 @@ function RelatedList({ title, links, onSelect }: { title: string; links: Link[];
   )
 }
 
-function ChainTab({ chain, nodes, onSelect, onFocus }: Props & { chain: Explanation }) {
+function ChainTab({ graphId, chain, nodes, onSelect, onFocus }: Props & { chain: Explanation }) {
   const byLevel = new Map<number, Step[]>()
   for (const s of chain.steps) {
     byLevel.set(s.level, [...(byLevel.get(s.level) ?? []), s])
@@ -243,6 +245,7 @@ function ChainTab({ chain, nodes, onSelect, onFocus }: Props & { chain: Explanat
   return (
     <>
       <p className="overview">{chain.overview}</p>
+      <Story key={`${graphId}/${chain.target.slug}`} graphId={graphId} slug={chain.target.slug} />
       {chain.causalPaths && chain.causalPaths.length > 0 && (
         <section className="panel-section">
           <div className="caption">{chain.causalPaths.length > 1 ? 'ПРИЧИННЫЕ ЦЕПОЧКИ' : 'ПРИЧИННАЯ ЦЕПОЧКА'}</div>
@@ -278,6 +281,74 @@ function ChainTab({ chain, nodes, onSelect, onFocus }: Props & { chain: Explanat
         ))}
       </ol>
     </>
+  )
+}
+
+type StoryState =
+  | { kind: 'checking' | 'off' | 'idle' | 'writing' }
+  | { kind: 'ready'; text: string }
+  | { kind: 'error'; message: string }
+
+// Связный рассказ модели по цепочке. Уже написанный показывается сразу, новый — по кнопке.
+function Story({ graphId, slug }: { graphId: string; slug: string }) {
+  const [state, setState] = useState<StoryState>({ kind: 'checking' })
+
+  useEffect(() => {
+    const ctrl = new AbortController()
+    api
+      .story(graphId, slug, ctrl.signal)
+      .then((r) => setState({ kind: 'ready', text: r.text }))
+      .catch((e: unknown) => {
+        if (ctrl.signal.aborted) return
+        // 503 — модель не настроена на сервере: блока нет совсем.
+        setState({ kind: e instanceof ApiError && e.status === 503 ? 'off' : 'idle' })
+      })
+    return () => ctrl.abort()
+  }, [graphId, slug])
+
+  const write = () => {
+    setState({ kind: 'writing' })
+    api
+      .tellStory(graphId, slug)
+      .then((r) => setState({ kind: 'ready', text: r.text }))
+      .catch((e: unknown) => setState({ kind: 'error', message: e instanceof Error ? e.message : 'Не получилось написать рассказ.' }))
+  }
+
+  if (state.kind === 'checking' || state.kind === 'off') return null
+  if (state.kind === 'ready') {
+    return (
+      <section className="story" aria-label="Рассказ ИИ">
+        <div className="story-head">
+          <Icon src={icons.sparkles} size={14} className="accent" />
+          <span>Рассказ ИИ</span>
+        </div>
+        <Md>{state.text}</Md>
+      </section>
+    )
+  }
+  return (
+    <section className="story story-cta">
+      {state.kind === 'writing' ? (
+        <>
+          <div className="story-head">
+            <Icon src={icons.sparkles} size={14} className="accent" />
+            <span>Пишу рассказ по цепочке…</span>
+          </div>
+          <div className="loading-line" aria-label="Загрузка" />
+          <p className="muted small">Обычно это занимает несколько секунд.</p>
+        </>
+      ) : (
+        <>
+          <button className="button primary story-button" onClick={write}>
+            <Icon src={icons.sparkles} size={15} />
+            Рассказать связно
+          </button>
+          <p className="muted small">
+            {state.kind === 'error' ? state.message : 'ИИ объяснит цепочку простыми словами — от законов к явлению.'}
+          </p>
+        </>
+      )}
+    </section>
   )
 }
 

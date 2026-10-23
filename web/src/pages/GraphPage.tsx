@@ -252,6 +252,7 @@ export function GraphPage({ id }: { id: string }) {
               )}
             </div>
             <ConceptPanel
+              graphId={id}
               nodes={nodesBySlug}
               source={meta?.demo ? undefined : meta?.source}
               consequences={consequences}
